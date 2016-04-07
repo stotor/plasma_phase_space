@@ -235,9 +235,9 @@ def extend_lagrangian_quantity(cartcomm, lagrangian_quantity):
 
     return lagrangian_quantity_extended
 
-def save_triangle_fields_parallel(comm, species, t, simulation_folder, output_folder):
+def save_triangle_fields_parallel(comm, species, t, raw_sorted_folder, output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
-    input_filename = simulation_folder + "/MS/RAW/" + species + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+    input_filename = raw_sorted_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
     f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
 
@@ -290,12 +290,14 @@ def save_triangle_fields_parallel(comm, species, t, simulation_folder, output_fo
     pos = get_triangles_array(particle_positions_extended)
     vel = get_triangles_array(particle_velocities_extended)
 
-    particle_charge = -1.0 / n_ppc
+    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
+    particle_charge = -1.0 / deposit_n_ppc
+
     ntri = n_ppp*2
     charge = particle_charge * np.ones(ntri) / 2.0
 
     # Parameters for PSI
-    grid = (n_cell_x, n_cell_y)
+    grid = (deposit_n_x, deposit_n_y)
     window = ((0.0, 0.0), (l_x, l_y))
     box = window
 
@@ -310,10 +312,10 @@ def save_triangle_fields_parallel(comm, species, t, simulation_folder, output_fo
     j3 = (fields['v'][:,:,1] * fields['m'])
     
     # Reduce deposited fields
-    rho_total = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    j1_total = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    j2_total = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    j3_total = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
+    rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
+    j1_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
+    j2_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
+    j3_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
