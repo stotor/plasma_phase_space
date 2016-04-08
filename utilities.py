@@ -11,9 +11,10 @@ def create_pdf(name):
     subprocess.call(["rm"] + glob.glob(name + "-*.png"))
     return
 
-def ensure_folder_exists(directory):
-    if (not os.path.exists(directory)):
-        os.makedirs(directory)
+def ensure_folder_exists(directory, rank=0):
+    if (rank==0):
+        if (not os.path.exists(directory)):
+            os.makedirs(directory)
     return
 
 def save_density_field(folder, field_name, species, t, data):
