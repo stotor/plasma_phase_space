@@ -8,8 +8,6 @@ import sys
 import utilities
 import osiris_interface as oi
 
-pypsi_path = '/Users/stotor/Desktop/plasma_phase_space/PyPSI'                                                                       
-sys.path.insert(0, pypsi_path)
 import PyPSI as psi
 
 def length_in_box(a, b, l_max):
