@@ -6,22 +6,32 @@ import osiris_interface as oi
 import pic_calculations as pic
 import triangle_calculations as tri
 import utilities
+import sys
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-simulation_folder = '/Users/stotor/Desktop/weibel_5e-1/'
-raw_sorted_folder = simulation_folder + '/MS/RAW_SORTED/electrons_a/'
-output_folder = simulation_folder + '/400x400/'
-species = 'electrons_a'
+if (not (len(sys.argv)!=5 or len(sys.argv)!=6)):
+    if (rank==0):
+        print('Usage:\n    mpirun -n <size> python deposit_parallel.py <simulation_folder> <species> <deposit_n_x> <deposit_n_y> [<n_t>]')
+    sys.exit()
+
+simulation_folder = sys.argv[1]
+species = sys.argv[2]
+deposit_n_x = int(sys.argv[3])
+deposit_n_y = int(sys.argv[4])
+
+raw_sorted_folder = simulation_folder + '/MS/RAW_SORTED/' + species + '/'
+output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n_y) + '/'
 
 t_array = oi.get_HIST_time(simulation_folder)
-n_t = len(t_array)
 
-deposit_n_x = 400
-deposit_n_y = 400
+if (len(sys.argv)==6):
+    n_t = int(sys.argv[5])
+else:
+    n_t = len(t_array)
 
-for t in range(0, n_t, 25):
+for t in range(n_t):
     if (rank==0):
         print(t)
         t_start = MPI.Wtime()

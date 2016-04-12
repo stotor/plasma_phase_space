@@ -2,15 +2,17 @@ from mpi4py import MPI
 
 import osiris_interface as oi
 import utilities
+import sys
 
-# Parameters to be supplied for each run
-simulation_folder = '/Users/stotor/Desktop/weibel_5e-1_large/'
+if (len(sys.argv)!=3):
+    print('Usage:\n    python sort_raw_serial.py <simulation_folder> <species>')
+    sys.exit()
 
-input_folder = simulation_folder + '/MS/RAW/electrons_a/'
-output_folder = simulation_folder + '/MS/RAW_SORTED/electrons_a/'
+simulation_folder = sys.argv[1]
+species = sys.argv[2]
 
-species = 'electrons_a'
-
+input_folder = simulation_folder + '/MS/RAW/' + species + '/'
+output_folder = simulation_folder + '/MS/RAW_SORTED/' + species + '/'
 utilities.ensure_folder_exists(output_folder)
 
 t_array = oi.get_HIST_time(simulation_folder)
