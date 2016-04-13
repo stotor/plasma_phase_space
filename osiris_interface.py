@@ -44,12 +44,12 @@ def get_HIST_fld_ene(folder, field_name):
     return energy[:, column]
 
 def get_HIST_time(folder):
-    energy = np.loadtxt(folder + "HIST/fld_ene", skiprows=1)
+    energy = np.loadtxt(folder + "/HIST/fld_ene", skiprows=1)
     t_array = energy[:,1]
     return t_array
 
 def get_HIST_timesteps(folder):
-    energy = np.loadtxt(folder + "HIST/fld_ene", skiprows=1)
+    energy = np.loadtxt(folder + "/HIST/fld_ene", skiprows=1)
     t_array = energy[:,0]
     return t_array
 
