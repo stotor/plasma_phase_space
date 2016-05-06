@@ -36,12 +36,12 @@ def deposit_cic_species(particle_positions, field, particle_charges, n_x, n_y, d
         deposit_cic_particle(position, field, charge, n_x, n_y, dx)
     return field
 
-def save_cic_fields_parallel(comm, species, t, raw_sorted_folder, output_folder, deposit_n_x, deposit_n_y):
+def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
     # Load raw data to be deposited
-    input_filename = raw_sorted_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
     f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
 

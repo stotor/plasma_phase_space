@@ -233,9 +233,9 @@ def extend_lagrangian_quantity(cartcomm, lagrangian_quantity):
 
     return lagrangian_quantity_extended
 
-def save_triangle_fields_parallel(comm, species, t, raw_sorted_folder, output_folder, deposit_n_x, deposit_n_y):
+def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
-    input_filename = raw_sorted_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
     f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
 
@@ -270,8 +270,19 @@ def save_triangle_fields_parallel(comm, species, t, raw_sorted_folder, output_fo
 
     # Get position array
     # Get velocity array
-    particle_positions = oi.create_position_array(f_input, i_start, i_end)
-    particle_velocities = oi.create_velocity_array(f_input, i_start, i_end)
+    my_particle_indices = np.where(f_input['tag'][:,0]==(rank+1))[0]
+    lagrangian_ids = oi.osiris_tag_to_lagrangian(f_input['tag'][my_particle_indices,1], 
+                                                n_cell_proc_x, 
+                                                n_cell_proc_y, 
+                                                n_ppc_x, 
+                                                n_ppc_y)    
+    # Necessary for h5py slicing
+    my_particle_indices = my_particle_indices.tolist()
+
+    lagrangian_sorting_keys = np.argsort(lagrangian_ids)
+    
+    particle_positions = oi.create_position_array_raw_unsorted(f_input, my_particle_indices, lagrangian_sorting_keys)
+    particle_velocities = oi.create_velocity_array_raw_unsorted(f_input, my_particle_indices, lagrangian_sorting_keys)
 
     f_input.close()
 
