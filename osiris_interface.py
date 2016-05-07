@@ -78,30 +78,15 @@ def create_momentum_array(raw, i_start, i_end):
         momentum[:, i] = raw["p" + str(i+1)][i_start:i_end]
     return momentum
 
-def create_position_array_raw_unsorted(raw, my_particle_indices, lagrangian_sorting_keys):
-    n_particles = len(my_particle_indices)
-    position = np.zeros([n_particles, 2])
-    for i in range(2):
-        position[:, i] = raw["x" + str(i+1)][my_particle_indices][lagrangian_sorting_keys]
-    return position
+def momentum_to_velocity(particle_momentum):
+    n_particles = particle_momentum.shape[0]
+    particle_velocities = np.zeros([n_particles, 3])
 
-def create_velocity_array_raw_unsorted(raw, my_particle_indices, lagrangian_sorting_keys):
-    n_particles = len(my_particle_indices)
-    velocity = np.zeros([n_particles, 3])
-    for i in range(3):
-        velocity[:, i] = raw["p" + str(i+1)][my_particle_indices][lagrangian_sorting_keys]
-    gamma = np.sqrt(1.0 + np.sum(velocity**2, axis=1))
-    velocity[:,0] = velocity[:,0] / gamma
-    velocity[:,1] = velocity[:,1] / gamma
-    velocity[:,2] = velocity[:,2] / gamma
-    return velocity
-
-def create_momentum_array_raw_unsorted(raw, my_particle_indices, lagrangian_sorting_keys):
-    n_particles = len(my_particle_indices)
-    momentum = np.zeros([n_particles, 3])
-    for i in range(3):
-        momentum[:, i] = raw["p" + str(i+1)][my_particle_indices][lagrangian_sorting_keys]
-    return momentum
+    gamma = np.sqrt(1.0 + np.sum(particle_momentum**2, axis=1))
+    particle_velocities[:,0] = particle_velocities[:,0] / gamma
+    particle_velocities[:,1] = particle_velocities[:,1] / gamma
+    particle_velocities[:,2] = particle_velocities[:,2] / gamma
+    return particle_velocities
 
 def osiris_tag_to_lagrangian(osiris_id, n_cell_proc_x, n_cell_proc_y, n_ppc_x, n_ppc_y):
     """Converts the OSIRIS particle ID within a processor, tag[i,1], into the 
@@ -201,81 +186,3 @@ def save_raw_sorted_serial(input_filename, output_filename):
     f_output.close()
 
     return
-
-# def save_raw_sorted_parallel(comm, input_filename, output_filename):
-#     rank = comm.Get_rank()
-
-#     # Load raw data to be sorted
-#     f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
-
-#     n_cell_x = f_input.attrs['NX'][0]
-#     n_cell_y = f_input.attrs['NX'][1]
-    
-#     n_p_total = f_input['x1'].shape[0]
-#     n_ppc = n_p_total / (n_cell_x * n_cell_y)
-#     n_ppc_x = int(np.sqrt(n_ppc))
-#     n_ppc_y = n_ppc_x
-
-#     n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
-#     n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
-#     n_cell_proc_x = n_cell_x / n_proc_x
-#     n_cell_proc_y = n_cell_y / n_proc_y
-#     n_ppp = (n_ppc_x * n_ppc_y) * (n_cell_proc_x * n_cell_proc_y)
-
-#     my_particle_indices = np.where(
-    
-#     x1 = f_input['x1'][:]
-#     x2 = f_input['x2'][:]
-#     p1 = f_input['p1'][:]
-#     p2 = f_input['p2'][:]
-#     p3 = f_input['p3'][:]
-#     tag = f_input['tag'][:]
-
-#     keys = f_input.attrs.keys()
-#     values = f_input.attrs.values()
-
-#     f_input.close()
-
-#     # Get memory location for saving
-#     processor = tag[:,0] - 1 # Convert to zero based indexing
-#     lagrangian_id = osiris_tag_to_lagrangian(tag[:,1], 
-#                                              n_cell_proc_x, 
-#                                              n_cell_proc_y, 
-#                                              n_ppc_x, 
-#                                              n_ppc_y)
-
-#     memory_index = processor * n_ppp + lagrangian_id
-#     sorted_indices = np.argsort(memory_index)
-
-#     x1 = x1[sorted_indices]
-#     x2 = x2[sorted_indices]
-#     p1 = p1[sorted_indices]
-#     p2 = p2[sorted_indices]
-#     p3 = p3[sorted_indices]
-#     processor = processor[sorted_indices]
-#     lagrangian_id = lagrangian_id[sorted_indices]
-
-#     # Save sorted raw data
-#     f_output = h5py.File(output_filename, 'w')
-    
-#     for i in range(len(keys)):
-#         f_output.attrs.create(keys[i], values[i])
-
-#     f_output.create_dataset('x1', (n_p_total,), dtype='float32')
-#     f_output.create_dataset('x2', (n_p_total,), dtype='float32') 
-#     f_output.create_dataset('p1', (n_p_total,), dtype='float32') 
-#     f_output.create_dataset('p2', (n_p_total,), dtype='float32') 
-#     f_output.create_dataset('p3', (n_p_total,), dtype='float32') 
-#     f_output.create_dataset('processor', (n_p_total,), dtype='int32')
-#     f_output.create_dataset('lagrangian_id', (n_p_total,), dtype='int32')
-    
-#     f_output['x1'][:] = x1[:]
-#     f_output['x2'][:] = x2[:]
-#     f_output['p1'][:] = p1[:]
-#     f_output['p2'][:] = p2[:]
-#     f_output['p3'][:] = p3[:]
-#     f_output['processor'][:] = processor[:]
-#     f_output['lagrangian_id'][:] = lagrangian_id[:]
-#     f_output.close()
-
-#     return

@@ -7,6 +7,7 @@ import sys
 
 import utilities
 import osiris_interface as oi
+import ship
 
 import PyPSI as psi
 
@@ -265,26 +266,11 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
     dx = l_x / float(n_cell_x)
 
-    i_start = rank * n_ppp
-    i_end = (rank + 1) * n_ppp
-
-    # Get position array
-    # Get velocity array
-    my_particle_indices = np.where(f_input['tag'][:,0]==(rank+1))[0]
-    lagrangian_ids = oi.osiris_tag_to_lagrangian(f_input['tag'][my_particle_indices,1], 
-                                                n_cell_proc_x, 
-                                                n_cell_proc_y, 
-                                                n_ppc_x, 
-                                                n_ppc_y)    
-    # Necessary for h5py slicing
-    my_particle_indices = my_particle_indices.tolist()
-
-    lagrangian_sorting_keys = np.argsort(lagrangian_ids)
-    
-    particle_positions = oi.create_position_array_raw_unsorted(f_input, my_particle_indices, lagrangian_sorting_keys)
-    particle_velocities = oi.create_velocity_array_raw_unsorted(f_input, my_particle_indices, lagrangian_sorting_keys)
-
+    # Get particle data for this processor's lagrangian subdomain
+    [particle_positions, particle_momentum] = ship.ship_particle_data(comm, f_input)
     f_input.close()
+
+    particle_velocities = oi.momentum_to_velocity(particle_momentum)
 
     # Add ghost column and row
     particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
@@ -319,7 +305,7 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     fields = {'m': None,'v': None} 
     psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     j3 = (fields['v'][:,:,1] * fields['m'])
-    
+
     # Reduce deposited fields
     rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     j1_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
