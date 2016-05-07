@@ -102,10 +102,6 @@ def ship_particle_data(comm, raw_h5f):
     particle_positions = np.array(particle_data_receive[:,1:3])
     particle_momentum = np.array(particle_data_receive[:,3:6])
     comm.Barrier()
-    if (rank==0):
-        print(particle_positions)
-        print(particle_momentum)
-
 
     return [particle_positions, particle_momentum]
 
