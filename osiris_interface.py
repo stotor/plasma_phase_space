@@ -83,9 +83,9 @@ def momentum_to_velocity(particle_momentum):
     particle_velocities = np.zeros([n_particles, 3])
 
     gamma = np.sqrt(1.0 + np.sum(particle_momentum**2, axis=1))
-    particle_velocities[:,0] = particle_velocities[:,0] / gamma
-    particle_velocities[:,1] = particle_velocities[:,1] / gamma
-    particle_velocities[:,2] = particle_velocities[:,2] / gamma
+    particle_velocities[:,0] = particle_momentum[:,0] / gamma
+    particle_velocities[:,1] = particle_momentum[:,1] / gamma
+    particle_velocities[:,2] = particle_momentum[:,2] / gamma
     return particle_velocities
 
 def osiris_tag_to_lagrangian(osiris_id, n_cell_proc_x, n_cell_proc_y, n_ppc_x, n_ppc_y):

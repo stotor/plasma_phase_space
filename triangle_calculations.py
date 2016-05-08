@@ -204,10 +204,13 @@ def extend_lagrangian_quantity(cartcomm, lagrangian_quantity):
     recvtag = 0
 
     source_dest = cartcomm.Shift(0,-1)
+
     source = source_dest[0]
     dest = source_dest[1]
+
     first_row_send = np.array(lagrangian_quantity[0,:,:], copy=True)
     last_row_recv = np.zeros(first_row_send.shape)
+
     cartcomm.Sendrecv(first_row_send, dest, sendtag, last_row_recv, source, recvtag)
 
     source_dest = cartcomm.Shift(1,-1)
@@ -246,6 +249,7 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     n_cell_y = f_input.attrs['NX'][1]
 
     cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
+
     rank = cartcomm.Get_rank()
     size = cartcomm.Get_size()
     
@@ -267,7 +271,8 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     dx = l_x / float(n_cell_x)
 
     # Get particle data for this processor's lagrangian subdomain
-    [particle_positions, particle_momentum] = ship.ship_particle_data(comm, f_input)
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input)
+
     f_input.close()
 
     particle_velocities = oi.momentum_to_velocity(particle_momentum)
@@ -288,7 +293,7 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
     particle_charge = -1.0 / deposit_n_ppc
 
-    ntri = n_ppp*2
+    ntri = pos.shape[0]
     charge = particle_charge * np.ones(ntri) / 2.0
 
     # Parameters for PSI
@@ -297,13 +302,13 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     box = window
 
     fields = {'m': None, 'v': None} 
-    psi.elementMesh(fields, pos, np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     rho = fields['m']
     j1 = (fields['v'][:,:,0] * fields['m'])
     j2 = (fields['v'][:,:,1] * fields['m'])
     # Repeat for j3
     fields = {'m': None,'v': None} 
-    psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     j3 = (fields['v'][:,:,1] * fields['m'])
 
     # Reduce deposited fields

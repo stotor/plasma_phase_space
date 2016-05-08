@@ -35,9 +35,7 @@ def ship_particle_data(comm, raw_h5f):
     p3 = p3[processor_sort_keys]
 
     # Make sure all arrays are doubles and pack together
-    particle_id = np.array(particle_id).astype(x1.dtype)
-
-    particle_data_send = np.zeros([n_ppp, 6], dtype='f')
+    particle_data_send = np.zeros([n_ppp, 6], dtype='double')
     particle_data_send[:,0] = particle_id
     particle_data_send[:,1] = x1
     particle_data_send[:,2] = x2
@@ -91,10 +89,15 @@ def ship_particle_data(comm, raw_h5f):
 
     n_cell_proc_x = n_cell_x / n_proc_x
     n_cell_proc_y = n_cell_y / n_proc_y
-    n_ppc_x = np.sqrt(n_ppp)
+
+    n_ppc = n_p_total / (n_cell_x * n_cell_y)
+    n_ppc_x = int(np.sqrt(n_ppc))
     n_ppc_y = n_ppc_x
 
-    lagrangian_id = oi.osiris_tag_to_lagrangian(particle_data_receive[:,0], n_cell_proc_x, n_cell_proc_y, n_ppc_x, n_ppc_y)
+    particle_tag = particle_data_receive[:,0].astype('i')
+
+    lagrangian_id = oi.osiris_tag_to_lagrangian(particle_tag, n_cell_proc_x, n_cell_proc_y, n_ppc_x, n_ppc_y)
+
     lagrangian_sorting_keys = np.argsort(lagrangian_id)
 
     particle_data_receive = particle_data_receive[lagrangian_sorting_keys]
