@@ -5,7 +5,7 @@ import h5py
 import utilities
 import osiris_interface as oi
 
-def ship_particle_data(comm, raw_h5f):
+def ship_particle_data(comm, raw_h5f, dim):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
@@ -21,6 +21,8 @@ def ship_particle_data(comm, raw_h5f):
 
     x1 = raw_h5f['x1'][i_start:i_end]
     x2 = raw_h5f['x2'][i_start:i_end]
+    if (dim==3):
+        x3 = raw_h5f['x3'][i_start:i_end]
     p1 = raw_h5f['p1'][i_start:i_end]
     p2 = raw_h5f['p2'][i_start:i_end]
     p3 = raw_h5f['p3'][i_start:i_end]
@@ -30,18 +32,30 @@ def ship_particle_data(comm, raw_h5f):
     particle_id = particle_id[processor_sort_keys]
     x1 = x1[processor_sort_keys]
     x2 = x2[processor_sort_keys]
+    if (dim==3):
+        x3 = x3[processor_sort_keys]
     p1 = p1[processor_sort_keys]
     p2 = p2[processor_sort_keys]
     p3 = p3[processor_sort_keys]
 
     # Make sure all arrays are doubles and pack together
-    particle_data_send = np.zeros([n_ppp, 6], dtype='double')
-    particle_data_send[:,0] = particle_id
-    particle_data_send[:,1] = x1
-    particle_data_send[:,2] = x2
-    particle_data_send[:,3] = p1
-    particle_data_send[:,4] = p2
-    particle_data_send[:,5] = p3
+    if (dim==2):
+        particle_data_send = np.zeros([n_ppp, 6], dtype='double')
+        particle_data_send[:,0] = particle_id
+        particle_data_send[:,1] = x1
+        particle_data_send[:,2] = x2
+        particle_data_send[:,3] = p1
+        particle_data_send[:,4] = p2
+        particle_data_send[:,5] = p3
+    elif (dim==3):
+        particle_data_send = np.zeros([n_ppp, 7], dtype='double')
+        particle_data_send[:,0] = particle_id
+        particle_data_send[:,1] = x1
+        particle_data_send[:,2] = x2
+        particle_data_send[:,3] = x3
+        particle_data_send[:,4] = p1
+        particle_data_send[:,5] = p2
+        particle_data_send[:,6] = p3
 
     # Find the number of particles I will send to each processor
     bins = np.arange(size+1)
@@ -82,33 +96,54 @@ def ship_particle_data(comm, raw_h5f):
     comm.Barrier()
 
     # Sort data by lagrangian id
-    n_proc_x = raw_h5f.attrs['PAR_NODE_CONF'][0]
-    n_proc_y = raw_h5f.attrs['PAR_NODE_CONF'][1]
-    n_cell_x = raw_h5f.attrs['NX'][0]
-    n_cell_y = raw_h5f.attrs['NX'][1]
-
-    n_cell_proc_x = n_cell_x / n_proc_x
-    n_cell_proc_y = n_cell_y / n_proc_y
-
-    n_ppc = n_p_total / (n_cell_x * n_cell_y)
-    n_ppc_x = int(np.sqrt(n_ppc))
-    n_ppc_y = n_ppc_x
-
     particle_tag = particle_data_receive[:,0].astype('i')
 
-    lagrangian_id = oi.osiris_tag_to_lagrangian(particle_tag, n_cell_proc_x, n_cell_proc_y, n_ppc_x, n_ppc_y)
+    if (dim==2):
+        n_proc_x = raw_h5f.attrs['PAR_NODE_CONF'][0]
+        n_proc_y = raw_h5f.attrs['PAR_NODE_CONF'][1]
+        n_cell_x = raw_h5f.attrs['NX'][0]
+        n_cell_y = raw_h5f.attrs['NX'][1]
+        n_cell_proc_x = n_cell_x / n_proc_x
+        n_cell_proc_y = n_cell_y / n_proc_y
+        n_ppc = n_p_total / (n_cell_x * n_cell_y)
+        n_ppc_x = utilities.int_nth_root(n_ppc, 2)
+        n_ppc_y = n_ppc_x
+        lagrangian_id = oi.osiris_tag_to_lagrangian(particle_tag, 
+                                                    n_cell_proc_x,
+                                                    n_cell_proc_y, 
+                                                    n_ppc_x, 
+                                                    n_ppc_y)
+    elif (dim==3):
+        n_proc_x = raw_h5f.attrs['PAR_NODE_CONF'][0]
+        n_proc_y = raw_h5f.attrs['PAR_NODE_CONF'][1]
+        n_proc_z = raw_h5f.attrs['PAR_NODE_CONF'][2]
+        n_cell_x = raw_h5f.attrs['NX'][0]
+        n_cell_y = raw_h5f.attrs['NX'][1]
+        n_cell_z = raw_h5f.attrs['NX'][2]
+        n_cell_proc_x = n_cell_x / n_proc_x
+        n_cell_proc_y = n_cell_y / n_proc_y
+        n_cell_proc_z = n_cell_z / n_proc_z
+        n_ppc = n_p_total / (n_cell_x * n_cell_y * n_cell_z)
+        n_ppc_x = utilities.int_nth_root(n_ppc, 3)
+        n_ppc_y = n_ppc_x
+        n_ppc_z = n_ppc_x
+        lagrangian_id = oi.osiris_tag_to_lagrangian_3d(particle_tag, 
+                                                       n_cell_proc_x,
+                                                       n_cell_proc_y, 
+                                                       n_cell_proc_z, 
+                                                       n_ppc_x, 
+                                                       n_ppc_y,
+                                                       n_ppc_z)
 
     lagrangian_sorting_keys = np.argsort(lagrangian_id)
-
     particle_data_receive = particle_data_receive[lagrangian_sorting_keys]
+    if (dim==2):
+        particle_positions = np.array(particle_data_receive[:,1:3])
+        particle_momentum = np.array(particle_data_receive[:,3:6])
+    elif (dim==3):
+        particle_positions = np.array(particle_data_receive[:,1:4])
+        particle_momentum = np.array(particle_data_receive[:,4:7])
 
-    particle_positions = np.array(particle_data_receive[:,1:3])
-    particle_momentum = np.array(particle_data_receive[:,3:6])
     comm.Barrier()
 
     return [particle_positions, particle_momentum]
-
-#comm = MPI.COMM_WORLD
-#input_filename = '/Users/stotor/Desktop/new_deposit_test/MS/RAW/electrons_a/RAW-electrons_a-000142.h5'
-#raw_h5f = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
-#ship_particle_data(comm, raw_h5f) 

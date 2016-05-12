@@ -9,6 +9,8 @@ import utilities
 import osiris_interface as oi
 import ship
 
+pypsi_path = '/Users/stotor/Desktop/PyPSI'
+sys.path.insert(0, pypsi_path)
 import PyPSI as psi
 
 def length_in_box(a, b, l_max):
@@ -237,6 +239,43 @@ def extend_lagrangian_quantity(cartcomm, lagrangian_quantity):
 
     return lagrangian_quantity_extended
 
+def extend_lagrangian_quantity_3d(cartcomm, l_quant):
+    rank = cartcomm.Get_rank()
+
+    l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]+1,l_quant.shape[3]], 
+                                dtype='double')
+
+    l_quant_extended[:-1,:-1,:-1,:] = l_quant
+
+    sendtag = 0
+    recvtag = 0
+
+    source_dest = cartcomm.Shift(2,-1)
+    source = source_dest[0]
+    dest = source_dest[1]
+    x1_face_send = np.array(l_quant_extended[:-1,:-1,0,:], copy=True)
+    x1_face_recv = np.zeros_like(x1_face_send)
+    cartcomm.Sendrecv(x1_face_send, dest, sendtag, x1_face_recv, source, recvtag)
+    l_quant_extended[:-1,:-1,-1,:] = x1_face_recv
+
+    source_dest = cartcomm.Shift(1,-1)
+    source = source_dest[0]
+    dest = source_dest[1]
+    x2_face_send = np.array(l_quant_extended[:-1,0,:,:], copy=True)
+    x2_face_recv = np.zeros_like(x2_face_send)
+    cartcomm.Sendrecv(x2_face_send, dest, sendtag, x2_face_recv, source, recvtag)
+    l_quant_extended[:-1,-1,:,:] = x2_face_recv
+
+    source_dest = cartcomm.Shift(0,-1)
+    source = source_dest[0]
+    dest = source_dest[1]
+    x3_face_send = np.array(l_quant_extended[0,:,:,:], copy=True)
+    x3_face_recv = np.zeros_like(x3_face_send)
+    cartcomm.Sendrecv(x3_face_send, dest, sendtag, x3_face_recv, source, recvtag)
+    l_quant_extended[-1,:,:,:] = x3_face_recv
+
+    return l_quant_extended
+
 def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
     input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
@@ -258,12 +297,12 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
 
     n_p_total = f_input['x1'].shape[0]
     n_ppc = n_p_total / (n_cell_x * n_cell_y)
-    n_ppc_x = int(np.sqrt(n_ppc))
+    n_ppc_x = utilities.int_nth_root(n_ppc, 2)
     n_ppc_y = n_ppc_x
 
     # Number of particles per processor
-    n_ppp = (n_ppc_x * n_ppc_y) * (n_cell_proc_x * n_cell_proc_y)
-    n_ppp_x = int(np.sqrt(n_ppp))
+    n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y
+    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
     n_ppp_y = n_ppp_x
     
     l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
@@ -271,7 +310,7 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     dx = l_x / float(n_cell_x)
 
     # Get particle data for this processor's lagrangian subdomain
-    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input)
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
 
     f_input.close()
 
@@ -333,3 +372,104 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
         utilities.save_density_field(output_folder, 'j3-ed', species, t, j3_total)
 
     return
+
+def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, deposit_n_z):
+    # Load raw data to be deposited
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+
+    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
+
+    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
+    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
+    n_proc_z = f_input.attrs['PAR_NODE_CONF'][2]
+
+    cartcomm = comm.Create_cart([n_proc_z, n_proc_y, n_proc_x], periods=[True,True,True])
+
+    rank = cartcomm.Get_rank()
+    size = cartcomm.Get_size()
+
+    n_cell_x = f_input.attrs['NX'][0]
+    n_cell_y = f_input.attrs['NX'][1]
+    n_cell_z = f_input.attrs['NX'][2]
+    
+    n_cell_proc_x = n_cell_x / n_proc_x
+    n_cell_proc_y = n_cell_y / n_proc_y
+    n_cell_proc_z = n_cell_z / n_proc_z
+
+    n_p_total = f_input['x1'].shape[0]
+    n_ppc = n_p_total / (n_cell_x * n_cell_y * n_cell_z)
+    n_ppc_x = utilities.int_nth_root(n_ppc, 3)
+    n_ppc_y = n_ppc_x
+    n_ppc_z = n_ppc_x
+
+    # Number of particles per processor
+    n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y * n_cell_proc_z
+    n_ppp_x = utilities.int_nth_root(n_ppp, 3)
+    n_ppp_y = n_ppp_x
+    n_ppp_z = n_ppp_x
+
+    
+    axis = np.zeros([3,2], dtype='double')
+    
+    axis[0,0] = f_input.attrs['XMIN'][0]
+    axis[0,1] = f_input.attrs['XMAX'][0]
+    axis[1,0] = f_input.attrs['XMIN'][1]
+    axis[1,1] = f_input.attrs['XMAX'][1]
+    axis[2,0] = f_input.attrs['XMIN'][2]
+    axis[2,1] = f_input.attrs['XMAX'][2]
+
+    dx = (axis[0,1] - axis[0,0]) / float(n_cell_x)
+
+    # Get particle data for this processor's lagrangian subdomain
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 3)
+
+    time = f_input.attrs['TIME']
+
+    f_input.close()
+
+    particle_velocities = oi.momentum_to_velocity(particle_momentum)
+
+    # Add ghost column and row
+    particle_positions = particle_positions.reshape(n_ppp_z, n_ppp_y, n_ppp_x, 3)
+    particle_velocities = particle_velocities.reshape(n_ppp_z, n_ppp_y, n_ppp_x, 3)
+    particle_positions_extended = extend_lagrangian_quantity_3d(cartcomm, particle_positions)
+    particle_velocities_extended = extend_lagrangian_quantity_3d(cartcomm, particle_velocities)
+
+    # Deposit using psi
+    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y * deposit_n_z)
+    particle_charge = -1.0 / deposit_n_ppc
+
+    # Parameters for PSI
+    grid = (deposit_n_z, deposit_n_y, deposit_n_x)
+    window = ((axis[2,0], axis[1,0], axis[0,0]), (axis[2,1], axis[1,1], axis[0,1]))
+    box = window
+
+    fields = {'m': None , 'v': None}
+    tol = 1000
+    for pos, vel, mass, block, nblocks in psi.elementBlocksFromGrid(particle_positions_extended, particle_velocities_extended, order=1, periodic=False):
+        psi.elementMesh(fields, pos, vel, mass, tol=tol, window=window, grid=grid, periodic=True, box=box)
+
+    rho = fields['m']
+    j1 = (fields['v'][:,:,:,2] * fields['m'])
+    j2 = (fields['v'][:,:,:,1] * fields['m'])
+    j3 = (fields['v'][:,:,:,0] * fields['m'])
+
+    # Reduce deposited fields
+    rho_total = np.zeros(deposit_n_z * deposit_n_y * deposit_n_x).reshape([deposit_n_z, deposit_n_y, deposit_n_x])
+    j1_total = np.zeros_like(rho_total)
+    j2_total = np.zeros_like(rho_total)
+    j3_total = np.zeros_like(rho_total)
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    # Save final field
+    if (rank==0):
+        utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+
+    return
+

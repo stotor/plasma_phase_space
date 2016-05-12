@@ -113,6 +113,31 @@ def osiris_tag_to_lagrangian(osiris_id, n_cell_proc_x, n_cell_proc_y, n_ppc_x, n
     
     return lagrangian
 
+def osiris_tag_to_lagrangian_3d(osiris_id, n_cell_x, n_cell_y, n_cell_z, n_ppc_x, n_ppc_y, n_ppc_z):
+    # Convert to zero based indexing
+    osiris_id = osiris_id - 1
+    
+    n_ppc = n_ppc_x * n_ppc_y * n_ppc_z
+
+    cell = osiris_id // n_ppc
+    cell_x = cell // (n_cell_y * n_cell_z)
+    cell_y = (cell - cell_x * (n_cell_y * n_cell_z)) // n_cell_z
+    cell_z = cell - cell_x * (n_cell_y * n_cell_z) - cell_y * n_cell_z
+
+    sub_cell = osiris_id - cell * n_ppc
+    sub_cell_x = sub_cell // (n_ppc_y * n_ppc_z)
+    sub_cell_y = (sub_cell - sub_cell_x * (n_ppc_y * n_ppc_z)) // n_ppc_z
+    sub_cell_z = sub_cell - sub_cell_x * (n_ppc_y * n_ppc_z) - sub_cell_y * n_ppc_z
+
+    lagrangian_x = cell_x * n_ppc_x + sub_cell_x
+    lagrangian_y = cell_y * n_ppc_y + sub_cell_y
+    lagrangian_z = cell_z * n_ppc_z + sub_cell_z
+    
+    # Lagrangian coordinate, with x increasing fastest
+    lagrangian = lagrangian_z * (n_cell_x * n_ppc_x * n_cell_y * n_ppc_y) + lagrangian_y * (n_cell_x * n_ppc_x) + lagrangian_x
+    
+    return lagrangian
+
 def save_raw_sorted_serial(input_filename, output_filename):
     # Load raw data to be sorted
     f_input = h5py.File(input_filename, 'r')
