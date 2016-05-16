@@ -5,13 +5,11 @@ from mpi4py import MPI
 import h5py
 import sys
 
+import PyPSI as psi
+
 import utilities
 import osiris_interface as oi
 import ship
-
-pypsi_path = '/Users/stotor/Desktop/PyPSI'
-sys.path.insert(0, pypsi_path)
-import PyPSI as psi
 
 def length_in_box(a, b, l_max):
     """Account for periodic boundaries by choosing the shortest possible distance between two points along a given axis."""
@@ -198,46 +196,33 @@ def get_axis_separation_distribution_species(particle_positions, n_l_x, n_l_y, l
 
     return [separations_x, separations_y]
 
-def extend_lagrangian_quantity(cartcomm, lagrangian_quantity):
+def extend_lagrangian_quantity_2d(cartcomm, l_quant):
     rank = cartcomm.Get_rank()
-    dim = lagrangian_quantity.shape[2]
+
+    l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]], dtype='double')
+
+    l_quant_extended[:-1,:-1,:] = l_quant
 
     sendtag = 0
     recvtag = 0
 
-    source_dest = cartcomm.Shift(0,-1)
-
-    source = source_dest[0]
-    dest = source_dest[1]
-
-    first_row_send = np.array(lagrangian_quantity[0,:,:], copy=True)
-    last_row_recv = np.zeros(first_row_send.shape)
-
-    cartcomm.Sendrecv(first_row_send, dest, sendtag, last_row_recv, source, recvtag)
-
     source_dest = cartcomm.Shift(1,-1)
     source = source_dest[0]
     dest = source_dest[1]
-    first_column_send = np.array(lagrangian_quantity[:,0,:], copy=True)
-    last_column_recv = np.zeros(first_column_send.shape)
-    cartcomm.Sendrecv(first_column_send, dest, sendtag, last_column_recv, source, recvtag)
+    x1_face_send = np.array(l_quant_extended[:-1,0,:], copy=True)
+    x1_face_recv = np.zeros_like(x1_face_send)
+    cartcomm.Sendrecv(x1_face_send, dest, sendtag, x1_face_recv, source, recvtag)
+    l_quant_extended[:-1,-1,:] = x1_face_recv
 
-    coords = cartcomm.Get_coords(rank)
-    upper_right_coords = [(coords[0]+1), (coords[1]+1)]
-    lower_left_coords = [(coords[0]-1), (coords[1]-1)]
-    source = cartcomm.Get_cart_rank(upper_right_coords)
-    dest = cartcomm.Get_cart_rank(lower_left_coords)
-    first_cell_send = np.array(lagrangian_quantity[0,0,:], copy=True)
-    last_cell_recv = np.zeros(first_cell_send.shape)
-    cartcomm.Sendrecv(first_cell_send, dest, sendtag, last_cell_recv, source, recvtag)
+    source_dest = cartcomm.Shift(0,-1)
+    source = source_dest[0]
+    dest = source_dest[1]
+    x2_face_send = np.array(l_quant_extended[0,:,:], copy=True)
+    x2_face_recv = np.zeros_like(x2_face_send)
+    cartcomm.Sendrecv(x2_face_send, dest, sendtag, x2_face_recv, source, recvtag)
+    l_quant_extended[-1,:,:] = x2_face_recv
 
-    last_row_recv = np.append(last_row_recv, last_cell_recv.reshape(1,dim), axis = 0)
-    lagrangian_quantity = np.append(lagrangian_quantity, last_column_recv.reshape(last_column_recv.shape[0],1,dim), axis=1)
-    lagrangian_quantity = np.append(lagrangian_quantity, last_row_recv.reshape(1,last_row_recv.shape[0],dim), axis=0)
-
-    lagrangian_quantity_extended = np.array(lagrangian_quantity, copy=True)
-
-    return lagrangian_quantity_extended
+    return l_quant_extended
 
 def extend_lagrangian_quantity_3d(cartcomm, l_quant):
     rank = cartcomm.Get_rank()
@@ -276,7 +261,7 @@ def extend_lagrangian_quantity_3d(cartcomm, l_quant):
 
     return l_quant_extended
 
-def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
+def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
     input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
@@ -304,13 +289,29 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y
     n_ppp_x = utilities.int_nth_root(n_ppp, 2)
     n_ppp_y = n_ppp_x
+
+    axis = np.zeros([2,2], dtype='double')
     
-    l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
-    l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
-    dx = l_x / float(n_cell_x)
+    axis[0,0] = f_input.attrs['XMIN'][0]
+    axis[0,1] = f_input.attrs['XMAX'][0]
+    axis[1,0] = f_input.attrs['XMIN'][1]
+    axis[1,1] = f_input.attrs['XMAX'][1]
+
+    dx = (axis[0,1] - axis[0,0]) / float(n_cell_x)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Get particle data for this processor's lagrangian subdomain
     [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for particle data shipping:')
+        print(t_elapsed)
+
+    time = f_input.attrs['TIME']
 
     f_input.close()
 
@@ -321,8 +322,17 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
     particle_velocities = particle_velocities.reshape(n_ppp_y, n_ppp_x, 3)
     
     # Extend to get the missing triangle vertices
-    particle_positions_extended = extend_lagrangian_quantity(cartcomm, particle_positions)
-    particle_velocities_extended = extend_lagrangian_quantity(cartcomm, particle_velocities)
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    particle_positions_extended = extend_lagrangian_quantity_2d(cartcomm, particle_positions)
+    particle_velocities_extended = extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for adding ghost zones:')
+        print(t_elapsed)
 
     # Deposit using psi
     # Create triangles arrays
@@ -337,39 +347,64 @@ def save_triangle_fields_parallel(comm, species, t, raw_folder, output_folder, d
 
     # Parameters for PSI
     grid = (deposit_n_x, deposit_n_y)
-    window = ((0.0, 0.0), (l_x, l_y))
+    window = ((axis[0,0], axis[1,0]), (axis[0,1], axis[1,1]))
     box = window
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     fields = {'m': None, 'v': None} 
     psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     rho = fields['m']
-    j1 = (fields['v'][:,:,0] * fields['m'])
+    j3 = (fields['v'][:,:,0] * fields['m'])
     j2 = (fields['v'][:,:,1] * fields['m'])
     # Repeat for j3
     fields = {'m': None,'v': None} 
     psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
-    j3 = (fields['v'][:,:,1] * fields['m'])
+    j1 = (fields['v'][:,:,1] * fields['m'])
+
+    cartcomm.barrier()
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for deposit:')
+        print(t_elapsed)
 
     # Reduce deposited fields
-    rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j1_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j2_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j3_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
+    rho_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+    j1_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+    j2_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+    j3_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+
     cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    rho_total = np.array(rho_total.transpose(), copy=True) 
-    j1_total = np.array(j1_total.transpose(), copy=True) 
-    j2_total = np.array(j2_total.transpose(), copy=True) 
-    j3_total = np.array(j3_total.transpose(), copy=True) 
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for parallel field reduction:')
+        print(t_elapsed)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Save final field
     if (rank==0):
-        utilities.save_density_field(output_folder, 'charge-ed', species, t, rho_total)
-        utilities.save_density_field(output_folder, 'j1-ed', species, t, j1_total)
-        utilities.save_density_field(output_folder, 'j2-ed', species, t, j2_total)
-        utilities.save_density_field(output_folder, 'j3-ed', species, t, j3_total)
+        utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for saving field:')
+        print(t_elapsed)
 
     return
 
@@ -402,6 +437,8 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
     n_ppc_y = n_ppc_x
     n_ppc_z = n_ppc_x
 
+    deposit_n_ppc = float(n_p_total) / (deposit_n_x * deposit_n_y * deposit_n_z)
+
     # Number of particles per processor
     n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y * n_cell_proc_z
     n_ppp_x = utilities.int_nth_root(n_ppp, 3)
@@ -421,7 +458,14 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
     dx = (axis[0,1] - axis[0,0]) / float(n_cell_x)
 
     # Get particle data for this processor's lagrangian subdomain
+    if (rank==0):
+        t_start = MPI.Wtime()
     [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 3)
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for particle data shipping:')
+        print(t_elapsed)
 
     time = f_input.attrs['TIME']
 
@@ -432,12 +476,18 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
     # Add ghost column and row
     particle_positions = particle_positions.reshape(n_ppp_z, n_ppp_y, n_ppp_x, 3)
     particle_velocities = particle_velocities.reshape(n_ppp_z, n_ppp_y, n_ppp_x, 3)
+    if (rank==0):
+        t_start = MPI.Wtime()
     particle_positions_extended = extend_lagrangian_quantity_3d(cartcomm, particle_positions)
     particle_velocities_extended = extend_lagrangian_quantity_3d(cartcomm, particle_velocities)
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for adding ghost zones:')
+        print(t_elapsed)
 
     # Deposit using psi
-    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y * deposit_n_z)
-    particle_charge = -1.0 / deposit_n_ppc
+    #particle_charge = -1.0 / n_ppp
 
     # Parameters for PSI
     grid = (deposit_n_z, deposit_n_y, deposit_n_x)
@@ -446,30 +496,63 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
 
     fields = {'m': None , 'v': None}
     tol = 1000
+    if (rank==0):
+        t_start = MPI.Wtime()
+
     for pos, vel, mass, block, nblocks in psi.elementBlocksFromGrid(particle_positions_extended, particle_velocities_extended, order=1, periodic=False):
+        mass = mass * (-1.0 * n_ppp) / float(deposit_n_ppc)
         psi.elementMesh(fields, pos, vel, mass, tol=tol, window=window, grid=grid, periodic=True, box=box)
+
+    cartcomm.barrier()
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for deposit:')
+        print(t_elapsed)
 
     rho = fields['m']
     j1 = (fields['v'][:,:,:,2] * fields['m'])
     j2 = (fields['v'][:,:,:,1] * fields['m'])
     j3 = (fields['v'][:,:,:,0] * fields['m'])
+    
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Reduce deposited fields
     rho_total = np.zeros(deposit_n_z * deposit_n_y * deposit_n_x).reshape([deposit_n_z, deposit_n_y, deposit_n_x])
     j1_total = np.zeros_like(rho_total)
     j2_total = np.zeros_like(rho_total)
     j3_total = np.zeros_like(rho_total)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+
     cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for parallel field reduction:')
+        print(t_elapsed)
+
     # Save final field
+    if (rank==0):
+        t_start = MPI.Wtime()
+
     if (rank==0):
         utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for saving field:')
+        print(t_elapsed)
 
     return
 

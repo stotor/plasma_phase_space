@@ -42,20 +42,20 @@ def ship_particle_data(comm, raw_h5f, dim):
     if (dim==2):
         particle_data_send = np.zeros([n_ppp, 6], dtype='double')
         particle_data_send[:,0] = particle_id
-        particle_data_send[:,1] = x1
-        particle_data_send[:,2] = x2
-        particle_data_send[:,3] = p1
+        particle_data_send[:,1] = x2
+        particle_data_send[:,2] = x1
+        particle_data_send[:,3] = p3
         particle_data_send[:,4] = p2
-        particle_data_send[:,5] = p3
+        particle_data_send[:,5] = p1
     elif (dim==3):
         particle_data_send = np.zeros([n_ppp, 7], dtype='double')
         particle_data_send[:,0] = particle_id
-        particle_data_send[:,1] = x1
+        particle_data_send[:,1] = x3
         particle_data_send[:,2] = x2
-        particle_data_send[:,3] = x3
-        particle_data_send[:,4] = p1
+        particle_data_send[:,3] = x1
+        particle_data_send[:,4] = p3
         particle_data_send[:,5] = p2
-        particle_data_send[:,6] = p3
+        particle_data_send[:,6] = p1
 
     # Find the number of particles I will send to each processor
     bins = np.arange(size+1)

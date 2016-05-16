@@ -11,23 +11,24 @@ import sys
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-if (len(sys.argv)!=5 and len(sys.argv)!=6):
+if (len(sys.argv)!=6 and len(sys.argv)!=7):
     if (rank==0):
-        print('Usage:\n    mpirun -n <size> python deposit_parallel.py <simulation_folder> <species> <deposit_n_x> <deposit_n_y> [<t>]')
+        print('Usage:\n    mpirun -n <size> python deposit_parallel.py <simulation_folder> <species> <deposit_n_x> <deposit_n_y> <deposit_n_z> [<t>]')
     sys.exit()
 
 simulation_folder = sys.argv[1]
 species = sys.argv[2]
 deposit_n_x = int(sys.argv[3])
 deposit_n_y = int(sys.argv[4])
+deposit_n_z = int(sys.argv[5])
 
 raw_folder = simulation_folder + '/MS/RAW/' + species + '/'
-output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n_y) + '/'
+output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n_y) + 'x' + str(deposit_n_z) + '/'
 
 t_array = oi.get_HIST_time(simulation_folder)
 
-if (len(sys.argv)==6):
-    t = int(sys.argv[5])
+if (len(sys.argv)==7):
+    t = int(sys.argv[6])
     timesteps = [t]
 else:
     n_t = len(t_array)
@@ -38,8 +39,8 @@ for t in timesteps:
         t_start = MPI.Wtime()
         print('Starting timestep ' + str(t))
 
-    pic.save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
-    tri.save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
+#    pic.save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
+    tri.save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, deposit_n_z)
 
     if (rank==0):
         t_end = MPI.Wtime()
