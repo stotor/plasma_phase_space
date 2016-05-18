@@ -297,8 +297,6 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     axis[1,0] = f_input.attrs['XMIN'][1]
     axis[1,1] = f_input.attrs['XMAX'][1]
 
-    dx = (axis[0,1] - axis[0,0]) / float(n_cell_x)
-
     if (rank==0):
         t_start = MPI.Wtime()
 
@@ -408,7 +406,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
 
     return
 
-def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, deposit_n_z):
+def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, deposit_n_z, zoom):
     # Load raw data to be deposited
     input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
@@ -455,7 +453,7 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
     axis[2,0] = f_input.attrs['XMIN'][2]
     axis[2,1] = f_input.attrs['XMAX'][2]
 
-    dx = (axis[0,1] - axis[0,0]) / float(n_cell_x)
+    axis_zoom = axis / zoom
 
     # Get particle data for this processor's lagrangian subdomain
     if (rank==0):
@@ -491,8 +489,8 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
 
     # Parameters for PSI
     grid = (deposit_n_z, deposit_n_y, deposit_n_x)
-    window = ((axis[2,0], axis[1,0], axis[0,0]), (axis[2,1], axis[1,1], axis[0,1]))
-    box = window
+    box = ((axis[2,0], axis[1,0], axis[0,0]), (axis[2,1], axis[1,1], axis[0,1]))
+    window = ((axis_zoom[2,0], axis_zoom[1,0], axis_zoom[0,0]), (axis_zoom[2,1], axis_zoom[1,1], axis_zoom[0,1]))
 
     fields = {'m': None , 'v': None}
     tol = 1000
@@ -500,7 +498,7 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
         t_start = MPI.Wtime()
 
     for pos, vel, mass, block, nblocks in psi.elementBlocksFromGrid(particle_positions_extended, particle_velocities_extended, order=1, periodic=False):
-        mass = mass * (-1.0 * n_ppp) / float(deposit_n_ppc)
+        mass = mass * (-1.0 * n_ppp) / float(deposit_n_ppc) * zoom**3
         psi.elementMesh(fields, pos, vel, mass, tol=tol, window=window, grid=grid, periodic=True, box=box)
 
     cartcomm.barrier()
@@ -543,10 +541,10 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
         t_start = MPI.Wtime()
 
     if (rank==0):
-        utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis_zoom)
+        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis_zoom)
+        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis_zoom)
+        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis_zoom)
 
     if (rank==0):
         t_end = MPI.Wtime()
