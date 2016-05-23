@@ -28,15 +28,113 @@ def deposit_cic_particle(position, field, charge, n_x, n_y, dx):
     
     return field
 
-def deposit_cic_species(particle_positions, field, particle_charges, n_x, n_y, dx):
-    n_p = len(particle_positions)
-    for i in range(n_p):
-        position = particle_positions[i,:]
-        charge = particle_charges[i]
-        deposit_cic_particle(position, field, charge, n_x, n_y, dx)
+def get_ngp(x_normalized):
+    x_lower = int(math.floor(x_normalized))
+    if (x_normalized - x_lower > 0.5):
+        x_ngp = x_lower + 1
+    else:
+        x_ngp = x_lower
+    return x_ngp
+
+
+def deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx):
+    """2X CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
+    # Shift to align the cell centers with the pixel centers
+    x_normalized = position[0] / dx - 0.5
+    y_normalized = position[1] / dx - 0.5
+    
+    # Indices of the lower left gridpoint of the cell the particle is in
+    x_ngp = get_ngp(x_normalized)
+    y_ngp = get_ngp(y_normalized)
+    
+    x_rel = x_normalized - x_ngp
+    y_rel = y_normalized - y_ngp
+
+    fraction_x = [0.5 * (0.5 - x_rel), 0.5, 0.5 * (0.5 + x_rel)]
+    fraction_y = [0.5 * (0.5 - y_rel), 0.5, 0.5 * (0.5 + y_rel)]
+    
+    field[(y_ngp-1)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[0] * fraction_y[0]
+    field[y_ngp%n_y, (x_ngp-1)%n_x] += charge * fraction_x[0] * fraction_y[1]
+    field[(y_ngp+1)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[0] * fraction_y[2]
+
+    field[(y_ngp-1)%n_y, x_ngp%n_x] += charge * fraction_x[1] * fraction_y[0]
+    field[y_ngp%n_y, x_ngp%n_x] += charge * fraction_x[1] * fraction_y[1]
+    field[(y_ngp+1)%n_y, x_ngp%n_x] += charge * fraction_x[1] * fraction_y[2]
+
+    field[(y_ngp-1)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[2] * fraction_y[0]
+    field[y_ngp%n_y, (x_ngp+1)%n_x] += charge * fraction_x[2] * fraction_y[1]
+    field[(y_ngp+1)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[2] * fraction_y[2]
+    
     return field
 
-def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
+def deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx):
+    """4X CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
+    # Shift to align the cell centers with the pixel centers
+    x_normalized = position[0] / dx - 0.5
+    y_normalized = position[1] / dx - 0.5
+    
+    # Indices of the lower left gridpoint of the cell the particle is in
+    x_ngp = get_ngp(x_normalized)
+    y_ngp = get_ngp(y_normalized)
+    
+    x_rel = x_normalized - x_ngp
+    y_rel = y_normalized - y_ngp
+
+    fraction_x = [0.25 * (0.5 - x_rel), 0.25, 0.25, 0.25, 0.25 * (0.5 + x_rel)]
+    fraction_y = [0.25 * (0.5 - y_rel), 0.25, 0.25, 0.25, 0.25 * (0.5 + y_rel)]
+    
+    field[(y_ngp-2)%n_y, (x_ngp-2)%n_x] += charge * fraction_x[0] * fraction_y[0]
+    field[(y_ngp-1)%n_y, (x_ngp-2)%n_x] += charge * fraction_x[0] * fraction_y[1]
+    field[y_ngp%n_y, (x_ngp-2)%n_x] += charge * fraction_x[0] * fraction_y[2]
+    field[(y_ngp+1)%n_y, (x_ngp-2)%n_x] += charge * fraction_x[0] * fraction_y[3]
+    field[(y_ngp+2)%n_y, (x_ngp-2)%n_x] += charge * fraction_x[0] * fraction_y[4]
+
+    field[(y_ngp-2)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[1] * fraction_y[0]
+    field[(y_ngp-1)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[1] * fraction_y[1]
+    field[y_ngp%n_y, (x_ngp-1)%n_x] += charge * fraction_x[1] * fraction_y[2]
+    field[(y_ngp+1)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[1] * fraction_y[3]
+    field[(y_ngp+2)%n_y, (x_ngp-1)%n_x] += charge * fraction_x[1] * fraction_y[4]
+
+    field[(y_ngp-2)%n_y, x_ngp%n_x] += charge * fraction_x[2] * fraction_y[0]
+    field[(y_ngp-1)%n_y, x_ngp%n_x] += charge * fraction_x[2] * fraction_y[1]
+    field[y_ngp%n_y, x_ngp%n_x] += charge * fraction_x[2] * fraction_y[2]
+    field[(y_ngp+1)%n_y, x_ngp%n_x] += charge * fraction_x[2] * fraction_y[3]
+    field[(y_ngp+2)%n_y, x_ngp%n_x] += charge * fraction_x[2] * fraction_y[4]
+
+    field[(y_ngp-2)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[3] * fraction_y[0]
+    field[(y_ngp-1)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[3] * fraction_y[1]
+    field[y_ngp%n_y, (x_ngp+1)%n_x] += charge * fraction_x[3] * fraction_y[2]
+    field[(y_ngp+1)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[3] * fraction_y[3]
+    field[(y_ngp+2)%n_y, (x_ngp+1)%n_x] += charge * fraction_x[3] * fraction_y[4]
+
+    field[(y_ngp-2)%n_y, (x_ngp+2)%n_x] += charge * fraction_x[4] * fraction_y[0]
+    field[(y_ngp-1)%n_y, (x_ngp+2)%n_x] += charge * fraction_x[4] * fraction_y[1]
+    field[y_ngp%n_y, (x_ngp+2)%n_x] += charge * fraction_x[4] * fraction_y[2]
+    field[(y_ngp+1)%n_y, (x_ngp+2)%n_x] += charge * fraction_x[4] * fraction_y[3]
+    field[(y_ngp+2)%n_y, (x_ngp+2)%n_x] += charge * fraction_x[4] * fraction_y[4]
+    
+    return field
+
+def deposit_cic_species(particle_positions, field, particle_charges, n_x, n_y, dx, refine):
+    n_p = len(particle_positions)
+    if (refine==2):
+        for i in range(n_p):
+            position = particle_positions[i,:]
+            charge = particle_charges[i]
+            deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx)
+    elif (refine==4):
+        for i in range(n_p):
+            position = particle_positions[i,:]
+            charge = particle_charges[i]
+            deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx)
+    else:
+        for i in range(n_p):
+            position = particle_positions[i,:]
+            charge = particle_charges[i]
+            deposit_cic_particle(position, field, charge, n_x, n_y, dx)
+    return field
+
+def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, refine):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
@@ -75,6 +173,14 @@ def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
     particle_positions = oi.create_position_array(f_input, i_start, i_end)
     particle_velocities = oi.create_velocity_array(f_input, i_start, i_end)
 
+    axis = np.zeros([2,2], dtype='double')
+    
+    axis[0,0] = f_input.attrs['XMIN'][0]
+    axis[0,1] = f_input.attrs['XMAX'][0]
+    axis[1,0] = f_input.attrs['XMIN'][1]
+    axis[1,1] = f_input.attrs['XMAX'][1]
+    time = f_input.attrs['TIME']
+
     f_input.close()
     
     # Deposit using CIC
@@ -84,19 +190,19 @@ def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
     particle_charges = particle_charge * np.ones(n_ppp)
 
     rho = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    rho = deposit_cic_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx)
+    rho = deposit_cic_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx, refine)
 
     j1 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j1 = particle_charges * particle_velocities[:,0]
-    j1 = deposit_cic_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx)
+    j1 = deposit_cic_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx, refine)
 
     j2 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j2 = particle_charges * particle_velocities[:,1]
-    j2 = deposit_cic_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx)
+    j2 = deposit_cic_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx, refine)
 
     j3 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j3 = particle_charges * particle_velocities[:,2]
-    j3 = deposit_cic_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx)
+    j3 = deposit_cic_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx, refine)
     
     # Reduce deposited fields
     rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
@@ -110,10 +216,10 @@ def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
 
     # Save final field
     if (rank==0):
-        utilities.save_density_field(output_folder, 'charge-cic', species, t, rho_total)
-        utilities.save_density_field(output_folder, 'j1-cic', species, t, j1_total)
-        utilities.save_density_field(output_folder, 'j2-cic', species, t, j2_total)
-        utilities.save_density_field(output_folder, 'j3-cic', species, t, j3_total)
+        utilities.save_density_field_attrs(output_folder, 'charge-cic', species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-cic', species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-cic', species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-cic', species, t, time, j3_total, axis)
 
     return
 

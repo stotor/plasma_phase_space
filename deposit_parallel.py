@@ -26,6 +26,8 @@ output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n
 
 t_array = oi.get_HIST_time(simulation_folder)
 
+refine = 0
+
 if (len(sys.argv)==6):
     t = int(sys.argv[5])
     timesteps = [t]
@@ -38,7 +40,7 @@ for t in timesteps:
         t_start = MPI.Wtime()
         print('Starting timestep ' + str(t))
 
-    pic.save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
+    pic.save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, refine)
     tri.save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
 
     if (rank==0):
