@@ -211,3 +211,16 @@ def save_raw_sorted_serial(input_filename, output_filename):
     f_output.close()
 
     return
+
+def factor_field(field, n_ave):
+    field = field.reshape(field.shape[0]//n_ave, n_ave, field.shape[1]//n_ave, n_ave)
+    field = np.average(field, axis=3)
+    field = np.average(field, axis=1)
+    return field
+
+def calculate_power_spectrum(field):
+    field = np.fft.fft2(field)
+    field = field * np.conj(field)
+    field = field.real
+    field[np.where(field < 10**(-16))] = 0
+    return field

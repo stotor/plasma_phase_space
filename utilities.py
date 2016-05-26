@@ -6,6 +6,17 @@ import subprocess
 import os
 import glob
 
+x_axis_string = '$x / (c / \omega_{pe})$'
+y_axis_string = '$y / (c / \omega_{pe})$'
+z_axis_string = '$z / (c / \omega_{pe})$'
+
+kx_axis_string = '$k_{x} / (2 \pi / L_{x})$'
+ky_axis_string = '$k_{y} / (2 \pi / L_{y})$'
+kz_axis_string = '$k_{z} / (2 \pi / L_{z})$'
+
+def create_time_string(t_array, t):
+    return '$\omega_{pe}t = ' + str(round(t_array[t], 2)) + '$'
+
 def create_pdf(name):
     subprocess.call(["convert", name + "-*.png", name + ".pdf"])
     subprocess.call(["rm"] + glob.glob(name + "-*.png"))

@@ -28,6 +28,37 @@ def deposit_cic_particle(position, field, charge, n_x, n_y, dx):
     
     return field
 
+# Not working yet
+def deposit_cic_3d_particle(position, field, charge, n_x, n_y, n_z, dx):
+    """CIC deposit onto a 3D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
+    # Shift to align the cell centers with the pixel centers
+    x = position[2] / dx - 0.5
+    y = position[1] / dx - 0.5
+    z = position[0] / dx - 0.5
+    
+    # Indices of the lower corner gridpoint of the cubic cell the particle is in
+    x_l = math.floor(x)
+    y_l = math.floor(y)
+    z_l = math.floor(y)
+    
+    x_rel = x - x_lower
+    y_rel = y - y_lower
+    z_rel = z - z_lower
+    
+    field[z_l%n_z, y_l%n_y, x_l%n_x] += charge * (1.0 - x_rel) * (1.0 - y_rel) * (1.0 - z_rel)
+    field[(z_l+1)%n_z, y_l%n_y, x_l%n_x] += charge * (1.0 - x_rel) * (1.0 - y_rel) * z_rel
+
+    field[z_l%n_z, (y_l+1)%n_y, x_l%n_x] += charge * (1.0 - x_rel) * y_rel * (1.0 - z_rel)
+    field[(z_l+1)%n_z, (y_l+1)%n_y, x_l%n_x] += charge * (1.0 - x_rel) * y_rel * z_rel
+
+    field[z_l%n_z, y_l%n_y, (x_l+1)%n_x] += charge * x_rel * (1.0 - y_rel) * (1.0 - z_rel)
+    field[(z_l+1)%n_z, y_l%n_y, (x_l+1)%n_x] += charge * x_rel * (1.0 - y_rel) * z_rel
+
+    field[z_l%n_z, (y_l+1)%n_y, (x_l+1)%n_x] += charge * x_rel * y_rel * (1.0 - z_rel)
+    field[(z_l+1)%n_z, (y_l+1)%n_y, (x_l+1)%n_x] += charge * x_rel * y_rel * z_rel
+    
+    return field
+
 def get_ngp(x_normalized):
     x_lower = int(math.floor(x_normalized))
     if (x_normalized - x_lower > 0.5):
@@ -35,7 +66,6 @@ def get_ngp(x_normalized):
     else:
         x_ngp = x_lower
     return x_ngp
-
 
 def deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx):
     """2X CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
