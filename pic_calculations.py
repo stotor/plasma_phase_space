@@ -145,18 +145,55 @@ def deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx):
     
     return field
 
+def deposit_cic_refined_particle(position, field, charge, n_x, n_y, dx, refine):
+    """Refined CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
+    # Shift to align the cell centers with the pixel centers
+    x_normalized = position[0] / dx - 0.5
+    y_normalized = position[1] / dx - 0.5
+    
+    # Indices of the lower left gridpoint of the cell the particle is in
+    x_ngp = get_ngp(x_normalized)
+    y_ngp = get_ngp(y_normalized)
+    
+    x_rel = x_normalized - x_ngp
+    y_rel = y_normalized - y_ngp
+
+    fraction_x = np.zeros(refine + 1, dtype='double')
+    fraction_x[:] = 1.0 / refine
+    fraction_x[0] = fraction_x[0] * (0.5 - x_rel)
+    fraction_x[-1] = fraction_x[-1] * (0.5 + x_rel)
+
+    fraction_y = np.zeros(refine + 1, dtype='double')
+    fraction_y[:] = 1.0 / refine
+    fraction_y[0] = fraction_y[0] * (0.5 - y_rel)
+    fraction_y[-1] = fraction_y[-1] * (0.5 + y_rel)
+
+    charge_fraction = np.outer(fraction_y, fraction_x) * charge
+
+    for y in range(refine+1):
+        for x in range(refine+1):
+            field[(y_ngp-refine/2+y)%n_y, (x_ngp-refine/2+x)%n_x] += charge_fraction[y,x]
+    
+    return field
+
+
 def deposit_cic_species(particle_positions, field, particle_charges, n_x, n_y, dx, refine):
     n_p = len(particle_positions)
-    if (refine==2):
+    if (refine):
         for i in range(n_p):
             position = particle_positions[i,:]
             charge = particle_charges[i]
-            deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx)
-    elif (refine==4):
-        for i in range(n_p):
-            position = particle_positions[i,:]
-            charge = particle_charges[i]
-            deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx)
+            deposit_cic_refined_particle(position, field, charge, n_x, n_y, dx, refine)
+#    if (refine==2):
+#        for i in range(n_p):
+#            position = particle_positions[i,:]
+#            charge = particle_charges[i]
+#            deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx)
+#    elif (refine==4):
+#        for i in range(n_p):
+#            position = particle_positions[i,:]
+#            charge = particle_charges[i]
+#            deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx)
     else:
         for i in range(n_p):
             position = particle_positions[i,:]

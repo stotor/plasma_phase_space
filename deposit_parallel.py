@@ -26,7 +26,7 @@ output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n
 
 t_array = oi.get_HIST_time(simulation_folder)
 
-refine = 0
+refine = 4
 
 if (len(sys.argv)==6):
     t = int(sys.argv[5])

@@ -6,6 +6,8 @@ import subprocess
 import os
 import glob
 
+t_axis_string = '$\omega_{pe} t$'
+
 x_axis_string = '$x / (c / \omega_{pe})$'
 y_axis_string = '$y / (c / \omega_{pe})$'
 z_axis_string = '$z / (c / \omega_{pe})$'
