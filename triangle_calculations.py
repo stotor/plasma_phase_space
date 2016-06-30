@@ -10,77 +10,7 @@ import PyPSI as psi
 import utilities
 import osiris_interface as oi
 import ship
-
-def length_in_box(a, b, l_max):
-    """Account for periodic boundaries by choosing the shortest possible distance between two points along a given axis."""
-    length = b - a
-    if (length > (l_max / 2.0)):
-        length = length - l_max
-    if (length < (-1.0 * l_max / 2.0)):
-        length = length + l_max
-    return length
-
-def get_triangle_area(vertices, l_x, l_y):
-    a = vertices[0]
-    b = vertices[1]
-    c = vertices[2]
-    ab_x = length_in_box(a[0], b[0], l_x)
-    ab_y = length_in_box(a[1], b[1], l_y)
-    ac_x = length_in_box(a[0], c[0], l_x)
-    ac_y = length_in_box(a[1], c[1], l_y)
-    area = 0.5 * (ab_x * ac_y - ab_y * ac_x)
-    area = abs(area)
-    return area
-
-def get_triangle_vertices_ll(lagrangian_quantity_extended, id_x, id_y):
-    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
-    vertex_b = lagrangian_quantity_extended[id_y+1, id_x, :]
-    vertex_c = lagrangian_quantity_extended[id_y, id_x+1, :]
-        
-    vertices = np.array([vertex_a, vertex_b, vertex_c])
-    
-    return vertices
-
-def get_triangle_vertices_ur(lagrangian_quantity_extended, id_x, id_y):
-    vertex_a = lagrangian_quantity_extended[id_y+1, id_x, :]
-    vertex_b = lagrangian_quantity_extended[id_y, id_x+1, :]
-    vertex_c = lagrangian_quantity_extended[id_y+1, id_x+1, :]
-        
-    vertices = np.array([vertex_a, vertex_b, vertex_c])
-    
-    return vertices
-
-def get_triangle_vertices_ul(lagrangian_quantity_extended, id_x, id_y):
-    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
-    vertex_b = lagrangian_quantity_extended[id_y+1, id_x, :]
-    vertex_c = lagrangian_quantity_extended[id_y+1, id_x+1, :]
-        
-    vertices = np.array([vertex_a, vertex_b, vertex_c])
-    
-    return vertices
-
-def get_triangle_vertices_lr(lagrangian_quantity_extended, id_x, id_y):
-    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
-    vertex_b = lagrangian_quantity_extended[id_y+1, id_x+1, :]
-    vertex_c = lagrangian_quantity_extended[id_y, id_x+1, :]
-        
-    vertices = np.array([vertex_a, vertex_b, vertex_c])
-    
-    return vertices
-
-def get_triangle_areas(particle_positions, n_l_x, n_l_y, l_x, l_y):
-    area = []
-    # Loop over rows
-    for j in range(n_l_y):
-        # Loop over square cells in a row
-        for i in range(n_l_x):
-            # Get indices of lower left and upper right triangles
-            vertices_ll = get_triangle_vertices_ll(particle_positions, i + j * n_l_x, n_l_x, n_l_y)
-            vertices_ur = get_triangle_vertices_ur(particle_positions, i + j * n_l_x, n_l_x, n_l_y)
-            # Calculate triangle area
-            area.append([get_triangle_area(vertices_ll, l_x, l_y)])
-            area.append([get_triangle_area(vertices_ur, l_x, l_y)])
-    return area
+import extend
 
 def get_triangles_array(lagrangian_quantity_extended):
     n_l_y = lagrangian_quantity_extended.shape[0] - 1
@@ -100,166 +30,6 @@ def get_triangles_array(lagrangian_quantity_extended):
             triangles_array[2*i,:,:] = vertices_ll
             triangles_array[2*i+1,:,:] = vertices_ur
     return triangles_array
-
-def get_triangle_areas_array(pos, l_x, l_y):
-    n_tri = pos.shape[0]
-    areas = np.zeros(n_tri)
-    for i in range(n_tri):
-        vertices = pos[i,:,:]
-        areas[i] = get_triangle_area(vertices, l_x, l_y)
-    return areas
-
-def get_max_axis_separation_cell(v_ll, v_lr, v_ul, v_ur, l_x, l_y):
-    vertical_x = length_in_box(v_ll[0], v_ul[0], l_x)
-    vertical_y = length_in_box(v_ll[1], v_ul[1], l_y)
-    horizontal_x = length_in_box(v_ll[0], v_lr[0], l_x)
-    horizontal_y = length_in_box(v_ll[1], v_lr[1], l_y)
-    diagonal_a_x = length_in_box(v_ll[0], v_ur[0], l_x)
-    diagonal_a_y = length_in_box(v_ll[1], v_ur[1], l_y)
-    diagonal_b_x = length_in_box(v_ul[0], v_lr[0], l_x)
-    diagonal_b_y = length_in_box(v_ul[1], v_lr[1], l_y)
-
-    max_axis_separation = np.amax([vertical_x, vertical_y, 
-                                  horizontal_x, horizontal_y, 
-                                  diagonal_a_x, diagonal_a_y,
-                                  diagonal_b_x, diagonal_b_y])
-
-    return max_axis_separation
-
-def get_max_axis_separation_species(particle_positions, n_l_x, n_l_y, l_x, l_y):
-    max_axis_separation = 0.0
-    # Loop over rows
-    for j in range(n_l_y):
-        # Loop over square cells in a row
-        for i in range(n_l_x):
-            cell = i + j * n_l_x
-            index_ll = cell
-            index_lr = cell+1
-            index_ul = cell+n_l_x
-            index_ur = cell+n_l_x+1
-
-            v_ll = particle_positions[index_ll]
-            v_lr = particle_positions[index_lr]
-            v_ul = particle_positions[index_ul]
-            v_ur = particle_positions[index_ur]
-
-            max_axis_separation = max(max_axis_separation, 
-                                      get_max_axis_separation_cell(v_ll, v_lr, v_ul, v_ur, l_x, l_y))
-
-    return max_axis_separation
-
-def get_axis_separations_triangle(v_ll, v_lr, v_ul, v_ur, l_x, l_y):
-    vertical_x = length_in_box(v_ll[0], v_ul[0], l_x)
-    vertical_y = length_in_box(v_ll[1], v_ul[1], l_y)
-    horizontal_x = length_in_box(v_ll[0], v_lr[0], l_x)
-    horizontal_y = length_in_box(v_ll[1], v_lr[1], l_y)
-    diagonal_a_x = length_in_box(v_ll[0], v_ur[0], l_x)
-    diagonal_a_y = length_in_box(v_ll[1], v_ur[1], l_y)
-    diagonal_b_x = length_in_box(v_ul[0], v_lr[0], l_x)
-    diagonal_b_y = length_in_box(v_ul[1], v_lr[1], l_y)
-
-    separations_x = []
-    separations_x.append(vertical_x)
-    separations_x.append(horizontal_x)
-    separations_x.append(diagonal_a_x)
-    separations_x.append(diagonal_b_x)
-
-    separations_y = []
-    separations_y.append(vertical_y)
-    separations_y.append(horizontal_y)
-    separations_y.append(diagonal_a_y)
-    separations_y.append(diagonal_b_y)
-
-    return [separations_x, separations_y]
-
-def get_axis_separation_distribution_species(particle_positions, n_l_x, n_l_y, l_x, l_y):
-    separations_x = []
-    separations_y = []
-    # Loop over rows
-    for j in range(n_l_y):
-        # Loop over square cells in a row
-        for i in range(n_l_x):
-            cell = i + j * n_l_x
-            index_ll = cell
-            index_lr = cell+1
-            index_ul = cell+n_l_x
-            index_ur = cell+n_l_x+1
-
-            v_ll = particle_positions[index_ll]
-            v_lr = particle_positions[index_lr]
-            v_ul = particle_positions[index_ul]
-            v_ur = particle_positions[index_ur]
-
-            separations_cell = get_axis_separations_triangle(v_ll, v_lr, v_ul, v_ur, l_x, l_y)
-            separations_x.extend(separations_cell[0])
-            separations_y.extend(separations_cell[1])
-
-    return [separations_x, separations_y]
-
-def extend_lagrangian_quantity_2d(cartcomm, l_quant):
-    rank = cartcomm.Get_rank()
-
-    l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]], dtype='double')
-
-    l_quant_extended[:-1,:-1,:] = l_quant
-
-    sendtag = 0
-    recvtag = 0
-
-    source_dest = cartcomm.Shift(1,-1)
-    source = source_dest[0]
-    dest = source_dest[1]
-    x1_face_send = np.array(l_quant_extended[:-1,0,:], copy=True)
-    x1_face_recv = np.zeros_like(x1_face_send)
-    cartcomm.Sendrecv(x1_face_send, dest, sendtag, x1_face_recv, source, recvtag)
-    l_quant_extended[:-1,-1,:] = x1_face_recv
-
-    source_dest = cartcomm.Shift(0,-1)
-    source = source_dest[0]
-    dest = source_dest[1]
-    x2_face_send = np.array(l_quant_extended[0,:,:], copy=True)
-    x2_face_recv = np.zeros_like(x2_face_send)
-    cartcomm.Sendrecv(x2_face_send, dest, sendtag, x2_face_recv, source, recvtag)
-    l_quant_extended[-1,:,:] = x2_face_recv
-
-    return l_quant_extended
-
-def extend_lagrangian_quantity_3d(cartcomm, l_quant):
-    rank = cartcomm.Get_rank()
-
-    l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]+1,l_quant.shape[3]], 
-                                dtype='double')
-
-    l_quant_extended[:-1,:-1,:-1,:] = l_quant
-
-    sendtag = 0
-    recvtag = 0
-
-    source_dest = cartcomm.Shift(2,-1)
-    source = source_dest[0]
-    dest = source_dest[1]
-    x1_face_send = np.array(l_quant_extended[:-1,:-1,0,:], copy=True)
-    x1_face_recv = np.zeros_like(x1_face_send)
-    cartcomm.Sendrecv(x1_face_send, dest, sendtag, x1_face_recv, source, recvtag)
-    l_quant_extended[:-1,:-1,-1,:] = x1_face_recv
-
-    source_dest = cartcomm.Shift(1,-1)
-    source = source_dest[0]
-    dest = source_dest[1]
-    x2_face_send = np.array(l_quant_extended[:-1,0,:,:], copy=True)
-    x2_face_recv = np.zeros_like(x2_face_send)
-    cartcomm.Sendrecv(x2_face_send, dest, sendtag, x2_face_recv, source, recvtag)
-    l_quant_extended[:-1,-1,:,:] = x2_face_recv
-
-    source_dest = cartcomm.Shift(0,-1)
-    source = source_dest[0]
-    dest = source_dest[1]
-    x3_face_send = np.array(l_quant_extended[0,:,:,:], copy=True)
-    x3_face_recv = np.zeros_like(x3_face_send)
-    cartcomm.Sendrecv(x3_face_send, dest, sendtag, x3_face_recv, source, recvtag)
-    l_quant_extended[-1,:,:,:] = x3_face_recv
-
-    return l_quant_extended
 
 def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
@@ -323,8 +93,8 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     if (rank==0):
         t_start = MPI.Wtime()
 
-    particle_positions_extended = extend_lagrangian_quantity_2d(cartcomm, particle_positions)
-    particle_velocities_extended = extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
+    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
+    particle_velocities_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
 
     if (rank==0):
         t_end = MPI.Wtime()
@@ -476,8 +246,8 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
     particle_velocities = particle_velocities.reshape(n_ppp_z, n_ppp_y, n_ppp_x, 3)
     if (rank==0):
         t_start = MPI.Wtime()
-    particle_positions_extended = extend_lagrangian_quantity_3d(cartcomm, particle_positions)
-    particle_velocities_extended = extend_lagrangian_quantity_3d(cartcomm, particle_velocities)
+    particle_positions_extended = extend.extend_lagrangian_quantity_3d(cartcomm, particle_positions)
+    particle_velocities_extended = extend.extend_lagrangian_quantity_3d(cartcomm, particle_velocities)
     if (rank==0):
         t_end = MPI.Wtime()
         t_elapsed = t_end - t_start
