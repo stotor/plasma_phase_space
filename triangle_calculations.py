@@ -12,6 +12,42 @@ import osiris_interface as oi
 import ship
 import extend
 
+def get_triangle_vertices_ll(lagrangian_quantity_extended, id_x, id_y):
+    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
+    vertex_b = lagrangian_quantity_extended[id_y+1, id_x, :]
+    vertex_c = lagrangian_quantity_extended[id_y, id_x+1, :]
+        
+    vertices = np.array([vertex_a, vertex_b, vertex_c])
+    
+    return vertices
+
+def get_triangle_vertices_ur(lagrangian_quantity_extended, id_x, id_y):
+    vertex_a = lagrangian_quantity_extended[id_y+1, id_x, :]
+    vertex_b = lagrangian_quantity_extended[id_y, id_x+1, :]
+    vertex_c = lagrangian_quantity_extended[id_y+1, id_x+1, :]
+        
+    vertices = np.array([vertex_a, vertex_b, vertex_c])
+    
+    return vertices
+
+def get_triangle_vertices_ul(lagrangian_quantity_extended, id_x, id_y):
+    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
+    vertex_b = lagrangian_quantity_extended[id_y+1, id_x, :]
+    vertex_c = lagrangian_quantity_extended[id_y+1, id_x+1, :]
+        
+    vertices = np.array([vertex_a, vertex_b, vertex_c])
+    
+    return vertices
+
+def get_triangle_vertices_lr(lagrangian_quantity_extended, id_x, id_y):
+    vertex_a = lagrangian_quantity_extended[id_y, id_x, :]
+    vertex_b = lagrangian_quantity_extended[id_y+1, id_x+1, :]
+    vertex_c = lagrangian_quantity_extended[id_y, id_x+1, :]
+        
+    vertices = np.array([vertex_a, vertex_b, vertex_c])
+    
+    return vertices
+
 def get_triangles_array(lagrangian_quantity_extended):
     n_l_y = lagrangian_quantity_extended.shape[0] - 1
     n_l_x = lagrangian_quantity_extended.shape[1] - 1
