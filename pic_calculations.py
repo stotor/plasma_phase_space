@@ -8,6 +8,29 @@ import h5py
 import osiris_interface as oi
 import utilities
 
+def deposit_ngp_particle(position, field, charge, n_x, n_y, dx):
+    """NGP deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
+    # Normalize position to grid spacing
+    x = position[0] / dx - 0.5
+    y = position[1] / dx - 0.5
+    
+    i_lower = math.floor(x)
+    j_lower = math.floor(y)
+    
+    if ((x-i_lower)<0.5):
+        i_ngp = i_lower
+    else:
+        i_ngp = i_lower+1
+        
+    if ((y-j_lower)<0.5):
+        j_ngp = j_lower
+    else:
+        j_ngp = j_lower+1
+    
+    field[j_ngp%n_y, i_ngp%n_x] += charge
+    
+    return field
+
 def deposit_cic_particle(position, field, charge, n_x, n_y, dx):
     """CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
     # Shift to align the cell centers with the pixel centers
@@ -177,31 +200,21 @@ def deposit_cic_refined_particle(position, field, charge, n_x, n_y, dx, refine):
     return field
 
 
-def deposit_cic_species(particle_positions, field, particle_charges, n_x, n_y, dx, refine):
+def deposit_species(particle_positions, field, particle_charges, n_x, n_y, dx, type):
     n_p = len(particle_positions)
-    if (refine):
+    if (type=='ngp'):
         for i in range(n_p):
             position = particle_positions[i,:]
             charge = particle_charges[i]
-            deposit_cic_refined_particle(position, field, charge, n_x, n_y, dx, refine)
-#    if (refine==2):
-#        for i in range(n_p):
-#            position = particle_positions[i,:]
-#            charge = particle_charges[i]
-#            deposit_cic_2x_particle(position, field, charge, n_x, n_y, dx)
-#    elif (refine==4):
-#        for i in range(n_p):
-#            position = particle_positions[i,:]
-#            charge = particle_charges[i]
-#            deposit_cic_4x_particle(position, field, charge, n_x, n_y, dx)
-    else:
+            deposit_ngp_particle(position, field, charge, n_x, n_y, dx)
+    elif (type=='cic'):
         for i in range(n_p):
             position = particle_positions[i,:]
             charge = particle_charges[i]
             deposit_cic_particle(position, field, charge, n_x, n_y, dx)
     return field
 
-def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, refine):
+def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, type):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
@@ -250,26 +263,26 @@ def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
 
     f_input.close()
     
-    # Deposit using CIC
+    # Deposit species
     deposit_dx = l_x / float(deposit_n_x)
     deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
     particle_charge = -1.0 / deposit_n_ppc
     particle_charges = particle_charge * np.ones(n_ppp)
 
     rho = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    rho = deposit_cic_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx, refine)
+    rho = deposit_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx, type)
 
     j1 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j1 = particle_charges * particle_velocities[:,0]
-    j1 = deposit_cic_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx, refine)
+    j1 = deposit_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx, type)
 
     j2 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j2 = particle_charges * particle_velocities[:,1]
-    j2 = deposit_cic_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx, refine)
+    j2 = deposit_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx, type)
 
     j3 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
     particles_j3 = particle_charges * particle_velocities[:,2]
-    j3 = deposit_cic_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx, refine)
+    j3 = deposit_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx, type)
     
     # Reduce deposited fields
     rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
@@ -283,64 +296,9 @@ def save_cic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
 
     # Save final field
     if (rank==0):
-        utilities.save_density_field_attrs(output_folder, 'charge-cic', species, t, time, rho_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j1-cic', species, t, time, j1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j2-cic', species, t, time, j2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j3-cic', species, t, time, j3_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'charge-' + type, species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-' + type, species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-' + type, species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-' + type, species, t, time, j3_total, axis)
 
     return
-
-def save_cic_fields_serial(species, t, simulation_folder, output_folder):
-    # Load raw data to be deposited
-    input_filename = simulation_folder + "/MS/RAW/" + species + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
-
-    f_input = h5py.File(input_filename, 'r')
-
-    n_cell_x = f_input.attrs['NX'][0]
-    n_cell_y = f_input.attrs['NX'][1]
-    
-    n_p_total = f_input['x1'].shape[0]
-    n_ppc = n_p_total / (n_cell_x * n_cell_y)
-    n_ppc_x = int(np.sqrt(n_ppc))
-    n_ppc_y = n_ppc_x
-
-    l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
-    l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
-    dx = l_x / float(n_cell_x)
-
-    i_start = 0
-    i_end = n_p_total
-
-    # Get position array
-    # Get velocity array
-    particle_positions = oi.create_position_array(f_input, i_start, i_end)
-    particle_velocities = oi.create_velocity_array(f_input, i_start, i_end)
-
-    f_input.close()
-    
-    # Deposit using CIC
-    particle_charge = -1.0 / deposit_n_ppc
-    particle_charges = particle_charge * np.ones(n_p_total)
-
-    rho = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    rho = deposit_cic_species(particle_positions, rho, particle_charges, n_cell_x, n_cell_y, dx)
-
-    j1 = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    particles_j1 = particle_charges * particle_velocities[:,0]
-    j1 = deposit_cic_species(particle_positions, j1, particles_j1, n_cell_x, n_cell_y, dx)
-
-    j2 = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    particles_j2 = particle_charges * particle_velocities[:,1]
-    j2 = deposit_cic_species(particle_positions, j2, particles_j2, n_cell_x, n_cell_y, dx)
-
-    j3 = np.zeros(n_cell_x * n_cell_y).reshape(n_cell_y, n_cell_x)
-    particles_j3 = particle_charges * particle_velocities[:,2]
-    j3 = deposit_cic_species(particle_positions, j3, particles_j3, n_cell_x, n_cell_y, dx)
-    
-    utilities.save_density_field(output_folder, 'charge-cic', species, t, rho)
-    utilities.save_density_field(output_folder, 'j1-cic', species, t, j1)
-    utilities.save_density_field(output_folder, 'j2-cic', species, t, j2)
-    utilities.save_density_field(output_folder, 'j3-cic', species, t, j3)
-
-    return
-

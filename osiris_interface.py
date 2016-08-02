@@ -17,7 +17,9 @@ def get_field(folder, field_type, field_name, t, species=0):
     elif (field_type=="DENSITY" or field_type=="UDIST"):
         filename = folder + "/MS/" + field_type + "/" + species + "/" + field_name + "/" + field_name + "-" + species + "-" + str(t).zfill(6) + ".h5"
     file_h5 = h5py.File(filename)
-    field = file_h5[field_name].value
+    if ((field_name[-5:]=='-savg') or (field_name[-5:]=='-tavg')):
+        field_name = field_name[:-5]
+    field = file_h5[field_name][:]
     file_h5.close()
     return field
 
