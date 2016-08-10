@@ -302,3 +302,83 @@ def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
         utilities.save_density_field_attrs(output_folder, 'j3-' + type, species, t, time, j3_total, axis)
 
     return
+
+def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x, n_k_y):
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    # Load raw data to be deposited
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+
+    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
+
+    n_p_total = f_input['x1'].shape[0]
+    n_ppp = n_p_total / size
+    
+    l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
+    l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
+
+    i_start = rank * n_ppp
+    i_end = (rank + 1) * n_ppp
+
+    # Get position array
+    particle_positions = oi.create_position_array(f_input, i_start, i_end)
+
+    time = f_input.attrs['TIME']
+
+    f_input.close()
+
+    # Calculate exact fourier transform
+    k_x = np.arange(n_k_x) * 2.0 * np.pi / l_x
+    k_y = np.arange(n_k_y) * 2.0 * np.pi / l_y
+
+    ft_x = np.exp(1j * k_x[:,None] * particle_positions[:,1])
+    ft_x = np.sum(ft_x, axis=1)
+    ft_y = np.exp(1j * k_y[:,None] * particle_positions[:,0])
+    ft_y = np.sum(ft_y, axis=1)
+
+    ft_x_r = np.copy(ft_x.real)
+    ft_x_i = np.copy(ft_x.imag)
+    ft_y_r = np.copy(ft_y.real)
+    ft_y_i = np.copy(ft_y.imag)
+
+    # Reduce fourier transform
+    ft_x_r_total = np.zeros_like(ft_x_r)
+    ft_x_i_total = np.zeros_like(ft_x_i)
+    ft_y_r_total = np.zeros_like(ft_y_r)
+    ft_y_i_total = np.zeros_like(ft_y_i)
+    comm.Reduce([ft_x_r, MPI.DOUBLE], [ft_x_r_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    comm.Reduce([ft_x_i, MPI.DOUBLE], [ft_x_i_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    comm.Reduce([ft_y_r, MPI.DOUBLE], [ft_y_r_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    comm.Reduce([ft_y_i, MPI.DOUBLE], [ft_y_i_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    # Calculate power spectrum
+    if (rank==0):
+        ps_x = ft_x_r_total**2 + ft_x_i_total**2
+        ps_y = ft_y_r_total**2 + ft_y_i_total**2
+
+    # Save power spectrum
+    if (rank==0):
+        save_folder = output_folder + '/power_spectrum/' + species + '/'
+        utilities.ensure_folder_exists(save_folder)
+        filename = save_folder + 'power_spectrum-' + species + '-' + str(t).zfill(6) + '.h5'
+        h5f = h5py.File(filename, 'w')
+        h5f.create_dataset('k_x', data=k_x)
+        h5f.create_dataset('k_y', data=k_y)
+        h5f.create_dataset('ps_x', data=ps_x)
+        h5f.create_dataset('ps_y', data=ps_y)
+        h5f.create_dataset('ft_x_r', data=ft_x_r_total)
+        h5f.create_dataset('ft_x_i', data=ft_x_i_total)
+        h5f.create_dataset('ft_y_r', data=ft_y_r_total)
+        h5f.create_dataset('ft_y_i', data=fy_y_i_total)
+        h5f.attrs['n_p_total'] = n_p_total
+        h5f.attrs['l_x'] = l_x
+        h5f.attrs['l_y'] = l_y
+        h5f.attrs['time'] = time
+        h5f.close()
+
+    return
+
+
+
+
