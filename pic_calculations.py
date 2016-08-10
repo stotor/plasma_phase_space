@@ -332,10 +332,18 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
     k_x = np.arange(n_k_x) * 2.0 * np.pi / float(l_x)
     k_y = np.arange(n_k_y) * 2.0 * np.pi / float(l_y)
 
-    ft_x = np.exp(1j * k_x[:,None] * particle_positions[:,0])
-    ft_x = np.sum(ft_x, axis=1)
-    ft_y = np.exp(1j * k_y[:,None] * particle_positions[:,1])
-    ft_y = np.sum(ft_y, axis=1)
+    chunk_size = 16384
+    indices = np.append(range(0, n_ppp, chunk_size), n_ppp)
+
+    for i in range(len(indices)-1):
+        start = indices[i]
+        end = indices[i+1]
+        if (i==0):
+            ft_x = np.sum(np.exp(1j * k_x[:,None] * particle_positions[start:end,0]), axis=1)
+            ft_y = np.sum(np.exp(1j * k_y[:,None] * particle_positions[start:end,1]), axis=1)
+        else:
+            ft_x += np.sum(np.exp(1j * k_x[:,None] * particle_positions[start:end,0]), axis=1)
+            ft_y += np.sum(np.exp(1j * k_y[:,None] * particle_positions[start:end,1]), axis=1)
 
     ft_x_r = np.copy(ft_x.real)
     ft_x_i = np.copy(ft_x.imag)
