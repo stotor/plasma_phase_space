@@ -370,7 +370,7 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
         h5f.create_dataset('ft_x_r', data=ft_x_r_total)
         h5f.create_dataset('ft_x_i', data=ft_x_i_total)
         h5f.create_dataset('ft_y_r', data=ft_y_r_total)
-        h5f.create_dataset('ft_y_i', data=fy_y_i_total)
+        h5f.create_dataset('ft_y_i', data=ft_y_i_total)
         h5f.attrs['n_p_total'] = n_p_total
         h5f.attrs['l_x'] = l_x
         h5f.attrs['l_y'] = l_y
