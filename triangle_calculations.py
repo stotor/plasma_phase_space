@@ -360,3 +360,158 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
 
     return
 
+def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample_locations):
+    # Load raw data to be deposited
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+
+    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
+
+    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
+    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
+    n_cell_x = f_input.attrs['NX'][0]
+    n_cell_y = f_input.attrs['NX'][1]
+
+    cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
+
+    rank = cartcomm.Get_rank()
+    size = cartcomm.Get_size()
+    
+    n_cell_proc_x = n_cell_x / n_proc_x
+    n_cell_proc_y = n_cell_y / n_proc_y
+
+    n_p_total = f_input['x1'].shape[0]
+    n_ppc = n_p_total / (n_cell_x * n_cell_y)
+    n_ppc_x = utilities.int_nth_root(n_ppc, 2)
+    n_ppc_y = n_ppc_x
+
+    # Number of particles per processor
+    n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y
+    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
+    n_ppp_y = n_ppp_x
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    # Get particle data for this processor's lagrangian subdomain
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for particle data shipping:')
+        print(t_elapsed)
+
+    time = f_input.attrs['TIME']
+
+    f_input.close()
+
+    # Add ghost column and row
+    particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
+    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
+    
+    # Extend to get the missing triangle vertices
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
+    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for adding ghost zones:')
+        print(t_elapsed)
+
+    # Create triangles arrays
+    pos = get_triangles_array(particle_positions_extended)
+    momentum = get_triangles_array(particle_momentum_extended)
+
+    # Open output file
+    if (rank==0):
+        utilities.ensure_folder_exists(output_folder)
+        filename = output_folder + 'distribution_functions-' + species + '-' + str(t).zfill(6) + '.h5'
+        h5f = h5py.File(filename, 'w')
+
+    # Loop over sample locations and calculate distribution function
+    for i in range(len(sample_locations)):
+        sample_x = sample_locations[i][1]
+        sample_y = sample_locations[i][0]
+        # For each triangle:
+        # Account for periodic boundaries (can be neglected if I don't choose points near the boundary)
+        # Calculate area of triangle    
+        det = (pos[:,1,0]-pos[:,2,0])*(pos[:,0,1]-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(pos[:,0,0]-pos[:,2,0])
+        # Calculate barycentric coordinates
+        l1 = ((pos[:,1,0]-pos[:,2,0])*(sample_x-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(sample_y-pos[:,2,0])) / det
+        l2 = ((pos[:,2,0]-pos[:,0,0])*(sample_x-pos[:,2,1])+(pos[:,0,1]-pos[:,2,1])*(sample_y-pos[:,2,0])) / det
+        l3 = 1.0 - l1 - l2
+        # Find triangles that contain the sample location, including edges and vertices
+        sample_inside = (l1<=1.0)*(l1>=0.0)*(l2<=1.0)*(l2>=0.0)*(l3<=1.0)*(l3>=0.0)
+        sample_indices = np.where(sample_inside==True)[0]
+    
+        l1_sample = l1[sample_indices]
+        l2_sample = l2[sample_indices]
+        l3_sample = l3[sample_indices]
+        momentum_sample = momentum[sample_indices]
+
+        # Interpolate three momentum components to sample location
+        px_sample = l1_sample * momentum_sample[:,0,0] + l2_sample * momentum_sample[:,1,0] + l3_sample * momentum_sample[:,2,0]
+        py_sample = l1_sample * momentum_sample[:,0,1] + l2_sample * momentum_sample[:,1,1] + l3_sample * momentum_sample[:,2,1]
+        pz_sample = l1_sample * momentum_sample[:,0,2] + l2_sample * momentum_sample[:,1,2] + l3_sample * momentum_sample[:,2,2]
+        area_sample = np.abs(det[sample_indices])
+
+        # Send this processors number of streams to root
+        n_streams = np.zeros(size, dtype='int32')
+        n_streams[rank] = len(sample_indices)
+
+        n_streams_total = np.zeros_like(n_streams)
+        cartcomm.Reduce([n_streams, MPI.INT], [n_streams_total, MPI.INT], op = MPI.SUM, root = 0)
+        
+        # Scatter start indices and broadcast total number of entries
+        total_streams = np.zeros(1, dtype='int32')
+        start_indices = np.zeros(size, dtype='int32')
+        if (rank==0):
+            end_indices = np.cumsum(n_streams_total, dtype='int32')
+            total_streams = end_indices[-1]
+            start_indices = np.roll(end_indices, 1)
+            start_indices[0] = 0
+
+        cartcomm.Bcast([total_streams, MPI.INT])
+        start_index = np.empty(1, dtype='int32')
+        cartcomm.Scatter([start_indices, MPI.INT], [start_index, MPI.INT])
+
+        end_index = start_index + len(sample_indices)
+    
+        # Reduce distributions
+        px_dist = np.zeros(total_streams, dtype='float64')
+        py_dist = np.zeros(total_streams, dtype='float64')
+        pz_dist = np.zeros(total_streams, dtype='float64')
+        area_dist = np.zeros(total_streams, dtype='float64')
+        px_dist[start_index:end_index] = px_sample
+        py_dist[start_index:end_index] = py_sample
+        pz_dist[start_index:end_index] = pz_sample
+        area_dist[start_index:end_index] = area_sample
+
+        px_dist_total = np.zeros_like(px_dist)
+        py_dist_total = np.zeros_like(py_dist)
+        pz_dist_total = np.zeros_like(pz_dist)
+        area_dist_total = np.zeros_like(area_dist)
+
+        cartcomm.Reduce([px_dist, MPI.DOUBLE], [px_dist_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        cartcomm.Reduce([py_dist, MPI.DOUBLE], [py_dist_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        cartcomm.Reduce([pz_dist, MPI.DOUBLE], [pz_dist_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        cartcomm.Reduce([area_dist, MPI.DOUBLE], [area_dist_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+        # Save distribution functions
+        if (rank==0):
+            h5f.create_dataset('sample_' + str(i) + '/px', data=px_dist_total)
+            h5f.create_dataset('sample_' + str(i) + '/py', data=py_dist_total)
+            h5f.create_dataset('sample_' + str(i) + '/pz', data=pz_dist_total)
+            h5f.create_dataset('sample_' + str(i) + '/area', data=area_dist_total)
+            h5f['sample_' + str(i)].attrs['x'] = sample_x
+            h5f['sample_' + str(i)].attrs['y'] = sample_y
+            h5f['sample_' + str(i)].attrs['time'] = time
+
+    if (rank==0):
+            h5f.close()
+
+    return

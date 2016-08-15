@@ -226,3 +226,12 @@ def calculate_power_spectrum(field):
     field = field.real
     field[np.where(field < 10**(-16))] = 0
     return field
+
+def calculate_1D_power_spectra(field):
+    fft_x = np.sum(np.fft.fft(field, axis=1), axis=0)
+    fft_y = np.sum(np.fft.fft(field, axis=0), axis=1)
+    ps_x = (fft_x * np.conj(fft_x)).real
+    ps_y = (fft_y * np.conj(fft_y)).real
+    ps_x[np.where(ps_x < 10**(-16))] = 0
+    ps_y[np.where(ps_y < 10**(-16))] = 0
+    return ps_x, ps_y
