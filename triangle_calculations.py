@@ -67,7 +67,8 @@ def get_triangles_array(lagrangian_quantity_extended):
             triangles_array[2*i+1,:,:] = vertices_ur
     return triangles_array
 
-def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
+def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
+                                     output_folder, deposit_n_x, deposit_n_y):
     # Load raw data to be deposited
     input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
@@ -102,6 +103,8 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     axis[0,1] = f_input.attrs['XMAX'][0]
     axis[1,0] = f_input.attrs['XMIN'][1]
     axis[1,1] = f_input.attrs['XMAX'][1]
+
+    deposit_dx = (axis[0,1] - axis[0,0]) / float(deposit_n_x)
 
     if (rank==0):
         t_start = MPI.Wtime()
@@ -167,6 +170,12 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     j1 = (fields['v'][:,:,1] * fields['m'])
 
+    # Calcualate cell averaged number of streams
+    fields = {'m': None}
+    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True,
+                    weight='volume')
+    streams = fields['m']
+
     cartcomm.barrier()
     if (rank==0):
         t_end = MPI.Wtime()
@@ -179,6 +188,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     j1_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
     j2_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
     j3_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+    streams_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
 
     if (rank==0):
         t_start = MPI.Wtime()
@@ -187,6 +197,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([streams, MPI.DOUBLE], [streams_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     if (rank==0):
         t_end = MPI.Wtime()
@@ -203,6 +214,8 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder
         utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+        streams_total = streams_total / deposit_dx**2
+        utilities.save_density_field_attrs(output_folder, 'streams-ed', species, t, time, streams_total, axis)
 
     if (rank==0):
         t_end = MPI.Wtime()
@@ -447,6 +460,13 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample
         # Find triangles that contain the sample location, including edges and vertices
         sample_inside = (l1<=1.0)*(l1>=0.0)*(l2<=1.0)*(l2>=0.0)*(l3<=1.0)*(l3>=0.0)
         sample_indices = np.where(sample_inside==True)[0]
+        # Filter out triangles that cross boundaries
+        lower_limit = l_x * 1.0 / 4.0
+        upper_limit = l_x * 3.0 / 4.0
+        sample_pos = pos[sample_indices,:,:]
+        inner_box = np.where((sample_pos>lower_limit) and (sample_pos<upper_limit))
+        inner_box = inner_box[:,:,0] * inner_box[:,:,1]
+        inner_box = inner_box[:,0] * inner_box[:,1] * inner_box[:,2]
     
         l1_sample = l1[sample_indices]
         l2_sample = l2[sample_indices]

@@ -140,80 +140,6 @@ def osiris_tag_to_lagrangian_3d(osiris_id, n_cell_x, n_cell_y, n_cell_z, n_ppc_x
     
     return lagrangian
 
-def save_raw_sorted_serial(input_filename, output_filename):
-    # Load raw data to be sorted
-    f_input = h5py.File(input_filename, 'r')
-
-    n_cell_x = f_input.attrs['NX'][0]
-    n_cell_y = f_input.attrs['NX'][1]
-    
-    n_p_total = f_input['x1'].shape[0]
-    n_ppc = n_p_total / (n_cell_x * n_cell_y)
-    n_ppc_x = int(np.sqrt(n_ppc))
-    n_ppc_y = n_ppc_x
-
-    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
-    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
-    n_cell_proc_x = n_cell_x / n_proc_x
-    n_cell_proc_y = n_cell_y / n_proc_y
-    n_ppp = (n_ppc_x * n_ppc_y) * (n_cell_proc_x * n_cell_proc_y)
-    
-    x1 = f_input['x1'][:]
-    x2 = f_input['x2'][:]
-    p1 = f_input['p1'][:]
-    p2 = f_input['p2'][:]
-    p3 = f_input['p3'][:]
-    tag = f_input['tag'][:]
-
-    keys = f_input.attrs.keys()
-    values = f_input.attrs.values()
-
-    f_input.close()
-
-    # Get memory location for saving
-    processor = tag[:,0] - 1 # Convert to zero based indexing
-    lagrangian_id = osiris_tag_to_lagrangian(tag[:,1], 
-                                             n_cell_proc_x, 
-                                             n_cell_proc_y, 
-                                             n_ppc_x, 
-                                             n_ppc_y)
-
-    memory_index = processor * n_ppp + lagrangian_id
-    sorted_indices = np.argsort(memory_index)
-
-    x1 = x1[sorted_indices]
-    x2 = x2[sorted_indices]
-    p1 = p1[sorted_indices]
-    p2 = p2[sorted_indices]
-    p3 = p3[sorted_indices]
-    processor = processor[sorted_indices]
-    lagrangian_id = lagrangian_id[sorted_indices]
-
-    # Save sorted raw data
-    f_output = h5py.File(output_filename, 'w')
-    
-    for i in range(len(keys)):
-        f_output.attrs.create(keys[i], values[i])
-
-    f_output.create_dataset('x1', (n_p_total,), dtype='float32')
-    f_output.create_dataset('x2', (n_p_total,), dtype='float32') 
-    f_output.create_dataset('p1', (n_p_total,), dtype='float32') 
-    f_output.create_dataset('p2', (n_p_total,), dtype='float32') 
-    f_output.create_dataset('p3', (n_p_total,), dtype='float32') 
-    f_output.create_dataset('processor', (n_p_total,), dtype='int32')
-    f_output.create_dataset('lagrangian_id', (n_p_total,), dtype='int32')
-    
-    f_output['x1'][:] = x1[:]
-    f_output['x2'][:] = x2[:]
-    f_output['p1'][:] = p1[:]
-    f_output['p2'][:] = p2[:]
-    f_output['p3'][:] = p3[:]
-    f_output['processor'][:] = processor[:]
-    f_output['lagrangian_id'][:] = lagrangian_id[:]
-    f_output.close()
-
-    return
-
 def factor_field(field, n_ave):
     field = field.reshape(field.shape[0]//n_ave, n_ave, field.shape[1]//n_ave, n_ave)
     field = np.average(field, axis=3)
@@ -226,12 +152,3 @@ def calculate_power_spectrum(field):
     field = field.real
     field[np.where(field < 10**(-16))] = 0
     return field
-
-def calculate_1D_power_spectra(field):
-    fft_x = np.sum(np.fft.fft(field, axis=1), axis=0)
-    fft_y = np.sum(np.fft.fft(field, axis=0), axis=1)
-    ps_x = (fft_x * np.conj(fft_x)).real
-    ps_y = (fft_y * np.conj(fft_y)).real
-    ps_x[np.where(ps_x < 10**(-16))] = 0
-    ps_y[np.where(ps_y < 10**(-16))] = 0
-    return ps_x, ps_y

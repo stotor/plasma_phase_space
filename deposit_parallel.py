@@ -11,8 +11,8 @@ import sys
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
-if (len(sys.argv)!=5 and len(sys.argv)!=6):
-    if (rank==0):
+if len(sys.argv) != 5 and len(sys.argv)!= 6:
+    if rank == 0:
         print('Usage:\n    mpirun -n <size> python deposit_parallel.py <simulation_folder> <species> <deposit_n_x> <deposit_n_y> [<t>]')
     sys.exit()
 
@@ -28,7 +28,7 @@ t_array = oi.get_HIST_time(simulation_folder)
 
 type = 'ngp'
 
-if (len(sys.argv)==6):
+if len(sys.argv) == 6:
     t = int(sys.argv[5])
     timesteps = [t]
 else:
@@ -36,16 +36,18 @@ else:
     timesteps = range(n_t)
 
 for t in timesteps:
-    if (rank==0):
+    if rank == 0:
         t_start = MPI.Wtime()
-        print('Starting timestep ' + str(t))
+        print 'Starting timestep ' + str(t)
 
-    pic.save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, type)
-    tri.save_triangle_fields_parallel_2d(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y)
+    pic.save_pic_fields_parallel(comm, species, t, raw_folder, output_folder,
+                                 deposit_n_x, deposit_n_y, type)
+    tri.save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
+                                         output_folder, deposit_n_x, deposit_n_y)
 
-    if (rank==0):
+    if rank == 0:
         t_end = MPI.Wtime()
         t_elapsed = t_end - t_start
-        print('Total time for timestep:')
-        print(t_elapsed)
+        print 'Total time for timestep:'
+        print t_elapsed
 
