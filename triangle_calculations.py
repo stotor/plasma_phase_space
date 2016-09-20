@@ -373,7 +373,8 @@ def save_triangle_fields_parallel_3d(comm, species, t, raw_folder, output_folder
 
     return
 
-def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample_locations):
+def distribution_function_2d(comm, species, t, raw_folder, output_folder,
+                             sample_locations):
     # Load raw data to be deposited
     input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
 
@@ -383,6 +384,9 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample
     n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
     n_cell_x = f_input.attrs['NX'][0]
     n_cell_y = f_input.attrs['NX'][1]
+
+    l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
+    l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
 
     cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
 
@@ -447,27 +451,33 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample
 
     # Loop over sample locations and calculate distribution function
     for i in range(len(sample_locations)):
-        sample_x = sample_locations[i][1]
-        sample_y = sample_locations[i][0]
-        # For each triangle:
-        # Account for periodic boundaries (can be neglected if I don't choose points near the boundary)
+        sample_position = np.ones([pos.shape[0],2], dtype='float64')
+        sample_position[:,1] = sample_locations[i][1]
+        sample_position[:,0] = sample_locations[i][0]
+        # Shift triangle vertices to account for periodic boundaries
+        max_x = np.amax(pos[:,:,1], axis=1)
+        max_y = np.amax(pos[:,:,0], axis=1)
+        shift_x = np.where((max_x[:,None] - pos[:,:,1]) > (l_x/2.0))
+        shift_y = np.where((max_y[:,None] - pos[:,:,0]) > (l_y/2.0))
+        pos[:,:,0] = pos[:,:,0] + shift_y * l_y)
+        pos[:,:,1] = pos[:,:,1] + shift_x * l_x
+        
+        max_x = np.amax(pos[:,:,1], axis=1)
+        max_y = np.amax(pos[:,:,0], axis=1)
+        shift_x = np.where((max_x - sample_position[:,1]) > (l_x/2.0))
+        shift_y = np.where((max_y - sample_position[:,0]) > (l_y/2.0))
+        sample_position[:,1] = sample_position[:,1] + shift_x * l_x
+        sample_position[:,0] = sample_position[:,0] + shift_y * l_y
+
         # Calculate area of triangle    
         det = (pos[:,1,0]-pos[:,2,0])*(pos[:,0,1]-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(pos[:,0,0]-pos[:,2,0])
         # Calculate barycentric coordinates
-        l1 = ((pos[:,1,0]-pos[:,2,0])*(sample_x-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(sample_y-pos[:,2,0])) / det
-        l2 = ((pos[:,2,0]-pos[:,0,0])*(sample_x-pos[:,2,1])+(pos[:,0,1]-pos[:,2,1])*(sample_y-pos[:,2,0])) / det
+        l1 = ((pos[:,1,0]-pos[:,2,0])*(sample_position[:,1]-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(sample_position[:,0]-pos[:,2,0])) / det
+        l2 = ((pos[:,2,0]-pos[:,0,0])*(sample_position[:,1]-pos[:,2,1])+(pos[:,0,1]-pos[:,2,1])*(sample_position[:,0]-pos[:,2,0])) / det
         l3 = 1.0 - l1 - l2
         # Find triangles that contain the sample location, including edges and vertices
         sample_inside = (l1<=1.0)*(l1>=0.0)*(l2<=1.0)*(l2>=0.0)*(l3<=1.0)*(l3>=0.0)
         sample_indices = np.where(sample_inside==True)[0]
-        # Filter out triangles that cross boundaries
-        lower_limit = l_x * 1.0 / 4.0
-        upper_limit = l_x * 3.0 / 4.0
-        sample_pos = pos[sample_indices,:,:]
-        inner_box = np.where((sample_pos>lower_limit) and (sample_pos<upper_limit))
-        inner_box = inner_box[:,:,0] * inner_box[:,:,1]
-        inner_box = inner_box[:,0] * inner_box[:,1] * inner_box[:,2]
-    
         l1_sample = l1[sample_indices]
         l2_sample = l2[sample_indices]
         l3_sample = l3[sample_indices]
@@ -479,7 +489,7 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder, sample
         pz_sample = l1_sample * momentum_sample[:,0,2] + l2_sample * momentum_sample[:,1,2] + l3_sample * momentum_sample[:,2,2]
         area_sample = np.abs(det[sample_indices])
 
-        # Send this processors number of streams to root
+        # Send this processor's number of streams to root
         n_streams = np.zeros(size, dtype='int32')
         n_streams[rank] = len(sample_indices)
 
