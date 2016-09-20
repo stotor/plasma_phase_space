@@ -457,15 +457,15 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
         # Shift triangle vertices to account for periodic boundaries
         max_x = np.amax(pos[:,:,1], axis=1)
         max_y = np.amax(pos[:,:,0], axis=1)
-        shift_x = np.where((max_x[:,None] - pos[:,:,1]) > (l_x/2.0))
-        shift_y = np.where((max_y[:,None] - pos[:,:,0]) > (l_y/2.0))
-        pos[:,:,0] = pos[:,:,0] + shift_y * l_y)
+        shift_x = (max_x[:,None] - pos[:,:,1]) > (l_x/2.0)
+        shift_y = (max_y[:,None] - pos[:,:,0]) > (l_y/2.0)
+        pos[:,:,0] = pos[:,:,0] + shift_y * l_y
         pos[:,:,1] = pos[:,:,1] + shift_x * l_x
         
         max_x = np.amax(pos[:,:,1], axis=1)
         max_y = np.amax(pos[:,:,0], axis=1)
-        shift_x = np.where((max_x - sample_position[:,1]) > (l_x/2.0))
-        shift_y = np.where((max_y - sample_position[:,0]) > (l_y/2.0))
+        shift_x = (max_x - sample_position[:,1]) > (l_x/2.0)
+        shift_y = (max_y - sample_position[:,0]) > (l_y/2.0)
         sample_position[:,1] = sample_position[:,1] + shift_x * l_x
         sample_position[:,0] = sample_position[:,0] + shift_y * l_y
 
@@ -484,10 +484,10 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
         momentum_sample = momentum[sample_indices]
 
         # Interpolate three momentum components to sample location
-        px_sample = l1_sample * momentum_sample[:,0,0] + l2_sample * momentum_sample[:,1,0] + l3_sample * momentum_sample[:,2,0]
+        px_sample = l1_sample * momentum_sample[:,0,2] + l2_sample * momentum_sample[:,1,2] + l3_sample * momentum_sample[:,2,2]
         py_sample = l1_sample * momentum_sample[:,0,1] + l2_sample * momentum_sample[:,1,1] + l3_sample * momentum_sample[:,2,1]
-        pz_sample = l1_sample * momentum_sample[:,0,2] + l2_sample * momentum_sample[:,1,2] + l3_sample * momentum_sample[:,2,2]
-        area_sample = np.abs(det[sample_indices])
+        pz_sample = l1_sample * momentum_sample[:,0,0] + l2_sample * momentum_sample[:,1,0] + l3_sample * momentum_sample[:,2,0]
+        area_sample = 0.5 * np.abs(det[sample_indices])
 
         # Send this processor's number of streams to root
         n_streams = np.zeros(size, dtype='int32')
@@ -537,8 +537,8 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
             h5f.create_dataset('sample_' + str(i) + '/py', data=py_dist_total)
             h5f.create_dataset('sample_' + str(i) + '/pz', data=pz_dist_total)
             h5f.create_dataset('sample_' + str(i) + '/area', data=area_dist_total)
-            h5f['sample_' + str(i)].attrs['x'] = sample_x
-            h5f['sample_' + str(i)].attrs['y'] = sample_y
+            h5f['sample_' + str(i)].attrs['x'] = sample_locations[i][1]
+            h5f['sample_' + str(i)].attrs['y'] = sample_locations[i][0]
             h5f['sample_' + str(i)].attrs['time'] = time
 
     if (rank==0):
