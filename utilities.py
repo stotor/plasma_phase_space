@@ -24,6 +24,13 @@ def create_pdf(name):
     subprocess.call(["rm"] + glob.glob(name + "-*.png"))
     return
 
+def combine_pdfs(name):
+    # pdftk *.pdf cat output newfile.pdf
+    subprocess.call(["pdftk"] + glob.glob(name + "*.pdf") +
+                    [ "cat", "output", name + ".pdf"])
+    subprocess.call(["rm"] + glob.glob(name + "*-*.pdf"))
+    return
+
 def ensure_folder_exists(directory, rank=0):
     if (rank==0):
         if (not os.path.exists(directory)):
