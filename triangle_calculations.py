@@ -464,8 +464,8 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
         
         max_x = np.amax(pos[:,:,1], axis=1)
         max_y = np.amax(pos[:,:,0], axis=1)
-        shift_x = (max_x - sample_position[:,1]) > (l_x/2.0)
-        shift_y = (max_y - sample_position[:,0]) > (l_y/2.0)
+        shift_x = (max_x - sample_position[:,1]) >= l_x
+        shift_y = (max_y - sample_position[:,0]) >= l_y
         sample_position[:,1] = sample_position[:,1] + shift_x * l_x
         sample_position[:,0] = sample_position[:,0] + shift_y * l_y
 

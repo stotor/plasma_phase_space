@@ -18,9 +18,9 @@ if (len(sys.argv)!=3):
 
 simulation_folder = sys.argv[1]
 species = sys.argv[2]
-sample_times = [0, 4, 10]
+sample_times = [0]
 sample_locations = [[5.5875, 23.3375],
-                    [4.7875, 25.5875]]
+                    [4.7875, 25.6875]]
 
 raw_folder = simulation_folder + '/MS/RAW/' + species + '/'
 output_folder = simulation_folder + '/distribution_functions/'
