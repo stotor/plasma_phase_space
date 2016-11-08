@@ -4,6 +4,13 @@ import numpy as np
 from mpi4py import MPI
 import h5py
 
+def create_filename(simulation_folder, diagnostic_type, t, species=None,
+                    field_name=None):
+    """Return filename string consistent with OSIRIS folder structure."""
+    if diagnostic_type == 'RAW':
+        filename = simulation_folder + "/MS/RAW/" + species + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+    return filename
+
 def get_RAW(folder, species, t):
     """Load raw data, returns h5py File object."""
     filename = folder + "/MS/RAW/" + species + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
@@ -150,5 +157,4 @@ def calculate_power_spectrum(field):
     field = np.fft.fft2(field)
     field = field * np.conj(field)
     field = field.real
-    field[np.where(field < 10**(-16))] = 0
     return field
