@@ -329,41 +329,38 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
     f_input.close()
 
     # Calculate exact fourier transform
-    k_x = np.arange(n_k_x) * 2.0 * np.pi / float(l_x)
-    k_y = np.arange(n_k_y) * 2.0 * np.pi / float(l_y)
+    k_x = np.tile(np.arange(n_k_x), n_k_y).reshape(n_k_y, n_k_x) \
+          * 2.0 * np.pi / l_x
+    k_y = np.repeat(np.arange(n_k_y), n_k_x).reshape(n_k_y, n_k_x) \
+          * 2.0 * np.pi / l_y
 
-    chunk_size = 16384
+    chunk_size = 256
     indices = np.append(range(0, n_ppp, chunk_size), n_ppp)
 
     for i in range(len(indices)-1):
         start = indices[i]
         end = indices[i+1]
-        if (i==0):
-            ft_x = np.sum(np.exp(1j * k_x[:,None] * particle_positions[start:end,0]), axis=1)
-            ft_y = np.sum(np.exp(1j * k_y[:,None] * particle_positions[start:end,1]), axis=1)
-        else:
-            ft_x += np.sum(np.exp(1j * k_x[:,None] * particle_positions[start:end,0]), axis=1)
-            ft_y += np.sum(np.exp(1j * k_y[:,None] * particle_positions[start:end,1]), axis=1)
 
-    ft_x_r = np.copy(ft_x.real)
-    ft_x_i = np.copy(ft_x.imag)
-    ft_y_r = np.copy(ft_y.real)
-    ft_y_i = np.copy(ft_y.imag)
+        phase = 1j * k_x[None,:,:] * particle_positions[start:end,0][:,None,None] \
+                + 1j * k_y[None,:,:] * particle_positions[start:end,1][:,None,None]
+        if (i==0):
+            ft = np.sum(np.exp(phase), axis=0)
+        else:
+            ft += np.sum(np.exp(phase), axis=0)
+
+    ft_r = np.copy(ft.real)
+    ft_i = np.copy(ft.imag)
 
     # Reduce fourier transform
-    ft_x_r_total = np.zeros_like(ft_x_r)
-    ft_x_i_total = np.zeros_like(ft_x_i)
-    ft_y_r_total = np.zeros_like(ft_y_r)
-    ft_y_i_total = np.zeros_like(ft_y_i)
-    comm.Reduce([ft_x_r, MPI.DOUBLE], [ft_x_r_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([ft_x_i, MPI.DOUBLE], [ft_x_i_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([ft_y_r, MPI.DOUBLE], [ft_y_r_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([ft_y_i, MPI.DOUBLE], [ft_y_i_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    ft_r_total = np.zeros_like(ft_r)
+    ft_i_total = np.zeros_like(ft_i)
+
+    comm.Reduce([ft_r, MPI.DOUBLE], [ft_r_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    comm.Reduce([ft_i, MPI.DOUBLE], [ft_i_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     # Calculate power spectrum
     if (rank==0):
-        ps_x = ft_x_r_total**2 + ft_x_i_total**2
-        ps_y = ft_y_r_total**2 + ft_y_i_total**2
+        ps = ft_r_total**2 + ft_i_total**2
 
     # Save power spectrum
     if (rank==0):
@@ -373,12 +370,9 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
         h5f = h5py.File(filename, 'w')
         h5f.create_dataset('k_x', data=k_x)
         h5f.create_dataset('k_y', data=k_y)
-        h5f.create_dataset('ps_x', data=ps_x)
-        h5f.create_dataset('ps_y', data=ps_y)
-        h5f.create_dataset('ft_x_r', data=ft_x_r_total)
-        h5f.create_dataset('ft_x_i', data=ft_x_i_total)
-        h5f.create_dataset('ft_y_r', data=ft_y_r_total)
-        h5f.create_dataset('ft_y_i', data=ft_y_i_total)
+        h5f.create_dataset('ps', data=ps)
+        h5f.create_dataset('ft_r', data=ft_r_total)
+        h5f.create_dataset('ft_i', data=ft_i_total)
         h5f.attrs['n_p_total'] = n_p_total
         h5f.attrs['l_x'] = l_x
         h5f.attrs['l_y'] = l_y
