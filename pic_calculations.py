@@ -334,7 +334,7 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
     k_y = np.repeat(np.arange(n_k_y), n_k_x).reshape(n_k_y, n_k_x) \
           * 2.0 * np.pi / l_y
 
-    chunk_size = 256
+    chunk_size = 64
     indices = np.append(range(0, n_ppp, chunk_size), n_ppp)
 
     for i in range(len(indices)-1):
