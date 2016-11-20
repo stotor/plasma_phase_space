@@ -329,10 +329,13 @@ def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x,
     f_input.close()
 
     # Calculate exact fourier transform
-    k_x = np.tile(np.arange(n_k_x), n_k_y).reshape(n_k_y, n_k_x) \
-          * 2.0 * np.pi / l_x
-    k_y = np.repeat(np.arange(n_k_y), n_k_x).reshape(n_k_y, n_k_x) \
-          * 2.0 * np.pi / l_y
+    n_k = n_k_x
+    
+    k_x = np.append(np.arange(0, (n_k/2), 1), np.arange(-(n_k/2), 0, 1))
+    k_y = np.append(np.arange(0, (n_k/2), 1), np.arange(-(n_k/2), 0, 1))
+    
+    k_x = np.tile(k_x, n_k).reshape(n_k, n_k) * 2.0 * np.pi / l_x
+    k_y = np.repeat(k_y, n_k).reshape(n_k, n_k) * 2.0 * np.pi / l_y
 
     chunk_size = 64
     indices = np.append(range(0, n_ppp, chunk_size), n_ppp)
