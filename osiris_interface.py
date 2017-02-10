@@ -62,10 +62,10 @@ def get_HIST_timesteps(folder):
     t_array = energy[:,0]
     return t_array
 
-def create_position_array(raw, i_start, i_end):
+def create_position_array(raw, i_start, i_end, dim=2):
     n_particles = i_end - i_start
-    position = np.zeros([n_particles, 2])
-    for i in range(2):
+    position = np.zeros([n_particles, dim])
+    for i in range(dim):
         position[:, i] = raw["x" + str(i+1)][i_start:i_end]
     return position
 
