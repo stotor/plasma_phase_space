@@ -214,7 +214,7 @@ def deposit_species(particle_positions, field, particle_charges, n_x, n_y, dx, t
             deposit_cic_particle(position, field, charge, n_x, n_y, dx)
     return field
 
-def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y, type):
+def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposit_n_x, deposit_n_y):
     rank = comm.Get_rank()
     size = comm.Get_size()
 
@@ -252,6 +252,7 @@ def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
     # Get velocity array
     particle_positions = oi.create_position_array(f_input, i_start, i_end)
     particle_velocities = oi.create_velocity_array(f_input, i_start, i_end)
+    particle_momentum = oi.create_momentum_array(f_input, i_start, i_end)
 
     axis = np.zeros([2,2], dtype='double')
     
@@ -269,37 +270,69 @@ def save_pic_fields_parallel(comm, species, t, raw_folder, output_folder, deposi
     particle_charge = -1.0 / deposit_n_ppc
     particle_charges = particle_charge * np.ones(n_ppp)
 
-    rho = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    rho = deposit_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx, type)
+    for deposit_type in ['ngp', 'cic']:
 
-    j1 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    particles_j1 = particle_charges * particle_velocities[:,0]
-    j1 = deposit_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx, type)
+        rho = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
+        rho = deposit_species(particle_positions, rho, particle_charges, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
 
-    j2 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    particles_j2 = particle_charges * particle_velocities[:,1]
-    j2 = deposit_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx, type)
+        j1 = np.zeros_like(rho)
+        particles_j1 = particle_charges * particle_velocities[:,0]
+        j1 = deposit_species(particle_positions, j1, particles_j1, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
 
-    j3 = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    particles_j3 = particle_charges * particle_velocities[:,2]
-    j3 = deposit_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx, type)
+        j2 = np.zeros_like(rho)
+        particles_j2 = particle_charges * particle_velocities[:,1]
+        j2 = deposit_species(particle_positions, j2, particles_j2,  deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
+
+        j3 = np.zeros_like(rho)
+        particles_j3 = particle_charges * particle_velocities[:,2]
+        j3 = deposit_species(particle_positions, j3, particles_j3, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
+
+        ufl1 = np.zeros_like(rho)
+        particles_ufl1 = particle_charges * particle_momentum[:,0]
+        ufl1 = deposit_species(particle_positions, ufl1, particles_ufl1, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
+        
+        ufl2 = np.zeros_like(rho)
+        particles_ufl2 = particle_charges * particle_momentum[:,1]
+        ufl2 = deposit_species(particle_positions, ufl2, particles_ufl2, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
+
+        ufl3 = np.zeros_like(rho)
+        particles_ufl3 = particle_charges * particle_momentum[:,2]
+        ufl3 = deposit_species(particle_positions, ufl3, particles_ufl3, deposit_n_x, deposit_n_y, deposit_dx, deposit_type)
     
-    # Reduce deposited fields
-    rho_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j1_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j2_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    j3_total = np.zeros(deposit_n_x * deposit_n_y).reshape(deposit_n_y, deposit_n_x)
-    comm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    comm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        # Reduce deposited fields
+        rho_total = np.zeros_like(rho)
+        j1_total = np.zeros_like(rho)
+        j2_total = np.zeros_like(rho)
+        j3_total = np.zeros_like(rho)
+        ufl1_total = np.zeros_like(rho)
+        ufl2_total = np.zeros_like(rho)
+        ufl3_total = np.zeros_like(rho)
+        comm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+        comm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
-    # Save final field
-    if (rank==0):
-        utilities.save_density_field_attrs(output_folder, 'charge-' + type, species, t, time, rho_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j1-' + type, species, t, time, j1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j2-' + type, species, t, time, j2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j3-' + type, species, t, time, j3_total, axis)
+        # Save final field
+        if (rank==0):
+            utilities.save_density_field_attrs(output_folder, 'charge-' + deposit_type, species, t, time, rho_total, axis)
+            utilities.save_density_field_attrs(output_folder, 'j1-' + deposit_type, species, t, time, j1_total, axis)
+            utilities.save_density_field_attrs(output_folder, 'j2-' + deposit_type, species, t, time, j2_total, axis)
+            utilities.save_density_field_attrs(output_folder, 'j3-' + deposit_type, species, t, time, j3_total, axis)
+        
+            zero_indices = np.where(rho_total==0.0)
+            rho_total[zero_indices] = 10.0**16
+            ufl1_total = ufl1_total / rho_total
+            ufl2_total = ufl2_total / rho_total
+            ufl3_total = ufl3_total / rho_total
+            ufl1_total[zero_indices] = 0.0
+            ufl2_total[zero_indices] = 0.0
+            ufl3_total[zero_indices] = 0.0
+            utilities.save_density_field_attrs(output_folder, 'ufl1-' + deposit_type, species, t, time, ufl1_total, axis)
+            utilities.save_density_field_attrs(output_folder, 'ufl2-' + deposit_type, species, t, time, ufl2_total, axis)
+            utilities.save_density_field_attrs(output_folder, 'ufl3-' + deposit_type, species, t, time, ufl3_total, axis)
 
     return
 

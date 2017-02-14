@@ -127,6 +127,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     # Add ghost column and row
     particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
     particle_velocities = particle_velocities.reshape(n_ppp_y, n_ppp_x, 3)
+    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
     
     # Extend to get the missing triangle vertices
     if (rank==0):
@@ -134,6 +135,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
 
     particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
     particle_velocities_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
+    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
 
     if (rank==0):
         t_end = MPI.Wtime()
@@ -145,6 +147,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     # Create triangles arrays
     pos = get_triangles_array(particle_positions_extended)
     vel = get_triangles_array(particle_velocities_extended)
+    mom = get_triangles_array(particle_momentum_extended)
 
     deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
     particle_charge = -1.0 / deposit_n_ppc
@@ -165,10 +168,20 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     rho = fields['m']
     j3 = (fields['v'][:,:,0] * fields['m'])
     j2 = (fields['v'][:,:,1] * fields['m'])
-    # Repeat for j3
+    # Repeat for j1
     fields = {'m': None,'v': None} 
     psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     j1 = (fields['v'][:,:,1] * fields['m'])
+
+    # Momentum fields
+    fields = {'m': None, 'v': None} 
+    psi.elementMesh(fields, np.array(pos, copy=True), np.array(mom[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    ufl3 = np.array(fields['v'][:,:,0] * fields['m'])
+    ufl2 = np.array(fields['v'][:,:,1] * fields['m'])
+    # Repeat for ufl1
+    fields = {'m': None,'v': None} 
+    psi.elementMesh(fields, np.array(pos, copy=True), np.array(mom[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    ufl1 = np.array(fields['v'][:,:,1] * fields['m'])
 
     # Calcualate cell averaged number of streams
     fields = {'m': None}
@@ -185,10 +198,13 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
 
     # Reduce deposited fields
     rho_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
-    j1_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
-    j2_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
-    j3_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
-    streams_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
+    j1_total = np.zeros_like(rho_total)
+    j2_total = np.zeros_like(rho_total)
+    j3_total = np.zeros_like(rho_total)
+    ufl1_total = np.zeros_like(rho_total)
+    ufl2_total = np.zeros_like(rho_total)
+    ufl3_total = np.zeros_like(rho_total)
+    streams_total = np.zeros_like(rho_total)
 
     if (rank==0):
         t_start = MPI.Wtime()
@@ -197,6 +213,9 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([streams, MPI.DOUBLE], [streams_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     if (rank==0):
@@ -214,6 +233,14 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
         utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
         utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+
+        ufl1_total = ufl1_total / rho_total
+        ufl2_total = ufl2_total / rho_total
+        ufl3_total = ufl3_total / rho_total
+        utilities.save_density_field_attrs(output_folder, 'ufl1-ed', species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-ed', species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-ed', species, t, time, ufl3_total, axis)
+        
         streams_total = streams_total / deposit_dx**2
         utilities.save_density_field_attrs(output_folder, 'streams-ed', species, t, time, streams_total, axis)
 
