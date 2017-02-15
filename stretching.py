@@ -20,26 +20,23 @@ def length_in_box(a, b, l_max):
     return length
 
 def calculate_axis_separations(v_ll, v_lr, v_ul, v_ur, l_x, l_y):
+    """Calculate axis separations including only the line segments connection lower-left and upper-right triangles."""
     vertical_y = length_in_box(v_ll[0], v_ul[0], l_x)
     vertical_x = length_in_box(v_ll[1], v_ul[1], l_y)
     horizontal_y = length_in_box(v_ll[0], v_lr[0], l_x)
     horizontal_x = length_in_box(v_ll[1], v_lr[1], l_y)
-    diagonal_a_y = length_in_box(v_ll[0], v_ur[0], l_x)
-    diagonal_a_x = length_in_box(v_ll[1], v_ur[1], l_y)
-    diagonal_b_y = length_in_box(v_ul[0], v_lr[0], l_x)
-    diagonal_b_x = length_in_box(v_ul[1], v_lr[1], l_y)
+    diagonal_y = length_in_box(v_ul[0], v_lr[0], l_x)
+    diagonal_x = length_in_box(v_ul[1], v_lr[1], l_y)
 
     separations_x = []
     separations_x.append(vertical_x)
     separations_x.append(horizontal_x)
-    separations_x.append(diagonal_a_x)
-    separations_x.append(diagonal_b_x)
+    separations_x.append(diagonal_x)
 
     separations_y = []
     separations_y.append(vertical_y)
     separations_y.append(horizontal_y)
-    separations_y.append(diagonal_a_y)
-    separations_y.append(diagonal_b_y)
+    separations_y.append(diagonal_y)
 
     return [separations_y, separations_x]
 
