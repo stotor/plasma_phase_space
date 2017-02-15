@@ -52,8 +52,24 @@ def save_density_field_attrs(folder, field_name, species, t, time, data, axis):
     filename = save_folder + field_name + '-' + species + '-' + str(t).zfill(6) + '.h5'
     h5f = h5py.File(filename, 'w')
     h5f.create_dataset(field_name, data=data)
-    h5f[field_name].attrs['LONG_NAME'] = r'\rho'
-    h5f[field_name].attrs['UNITS'] = 'e \omega_p^3/ c^3'
+    if field_name[:6] == 'charge':
+        h5f[field_name].attrs['LONG_NAME'] = r'\rho'
+        h5f[field_name].attrs['UNITS'] = 'e \omega_p^3/ c^3'
+    elif field_name[0] == 'j':
+        h5f[field_name].attrs['LONG_NAME'] = r'j_{' + field_name[1] + '}'
+        h5f[field_name].attrs['UNITS'] = 'n_{0}'
+    elif field_name[:3] == 'ufl':
+        h5f[field_name].attrs['LONG_NAME'] = r'u_{fl' + field_name[3] + '}'
+        h5f[field_name].attrs['UNITS'] = 'c'
+    elif field_name[:3] == 'uth':
+        h5f[field_name].attrs['LONG_NAME'] = r'u_{th' + field_name[3] + '}'
+        h5f[field_name].attrs['UNITS'] = 'c'
+    elif field_name[:7] == 'streams':
+        h5f[field_name].attrs['LONG_NAME'] = 'streams'
+        h5f[field_name].attrs['UNITS'] = '\#'
+    else:
+        h5f[field_name].attrs['LONG_NAME'] = r'\rho'
+        h5f[field_name].attrs['UNITS'] = 'e \omega_p^3/ c^3'
     
     axis = np.array(axis)
     dim = axis.shape[0]
