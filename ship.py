@@ -15,6 +15,9 @@ def ship_particle_data(comm, raw_h5f, dim):
     i_start = rank * n_ppp
     i_end = (rank + 1) * n_ppp
 
+    if (rank==0):
+        t_start = MPI.Wtime()
+
     # Load my chunk of the raw data
     processor_list = raw_h5f['tag'][i_start:i_end,0] - 1 # To account for OSIRIS 1 based indexing for processor number
     particle_id = raw_h5f['tag'][i_start:i_end,1]
@@ -26,6 +29,15 @@ def ship_particle_data(comm, raw_h5f, dim):
     p1 = raw_h5f['p1'][i_start:i_end]
     p2 = raw_h5f['p2'][i_start:i_end]
     p3 = raw_h5f['p3'][i_start:i_end]
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for loading my chunk of the raw data:')
+        print(t_elapsed)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Sort by processor
     processor_sort_keys = np.argsort(processor_list)
@@ -57,9 +69,19 @@ def ship_particle_data(comm, raw_h5f, dim):
         particle_data_send[:,5] = p2
         particle_data_send[:,6] = p1
 
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for sorting my chunk of the raw data:')
+        print(t_elapsed)
+
+
     # Find the number of particles I will send to each processor
     bins = np.arange(size+1)
     particle_count_send = np.array(np.histogram(processor_list, bins)[0], dtype='i')
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Nonblocking send to each processor the number of particles to expect from me
     for proc in range(size):
@@ -72,8 +94,17 @@ def ship_particle_data(comm, raw_h5f, dim):
 
     comm.Barrier()
 
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for communicating particle send and receive information:')
+        print(t_elapsed)
+
     # Find slicing indices for sending to each processor
     send_indices = np.concatenate([[0], np.cumsum(particle_count_send)])
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Nonblocking send my particles to their respective processors
     for proc in range(size):
@@ -94,6 +125,15 @@ def ship_particle_data(comm, raw_h5f, dim):
         comm.Recv([particle_data_receive[i_start:i_end,:], MPI.DOUBLE], proc, tag=0)
 
     comm.Barrier()
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for sending and receiving particle data:')
+        print(t_elapsed)
+
+    if (rank==0):
+        t_start = MPI.Wtime()
 
     # Sort data by lagrangian id
     particle_tag = particle_data_receive[:,0].astype('i')
@@ -145,5 +185,11 @@ def ship_particle_data(comm, raw_h5f, dim):
         particle_momentum = np.array(particle_data_receive[:,4:7])
 
     comm.Barrier()
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for sort of received particle data:')
+        print(t_elapsed)
 
     return [particle_positions, particle_momentum]
