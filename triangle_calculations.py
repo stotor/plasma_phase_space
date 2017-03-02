@@ -375,6 +375,11 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     # Get particle data for this processor's lagrangian subdomain
     [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
 
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for particle data shipping:')
+        print(t_elapsed)
 
     time = f_input.attrs['TIME']
 
@@ -408,7 +413,6 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
         t_elapsed = t_end - t_start
         print('Time for NGP deposit:')
         print(t_elapsed)
-
 
     if (rank==0):
         t_start = MPI.Wtime()
@@ -451,6 +455,7 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
 
     if (rank==0):
         t_start = MPI.Wtime()
+
     deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box,
                               output_folder, species, t, time, axis)
     deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window, box,
