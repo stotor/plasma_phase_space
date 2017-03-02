@@ -38,8 +38,6 @@ for t in timesteps:
         t_start = MPI.Wtime()
         print 'Starting timestep ' + str(t)
 
-    pic.save_pic_fields_parallel(comm, species, t, raw_folder, output_folder,
-                                 deposit_n_x, deposit_n_y)
     tri.save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
                                          output_folder, deposit_n_x,
                                          deposit_n_y)

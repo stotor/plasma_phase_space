@@ -11,8 +11,8 @@ import utilities
 def deposit_ngp_particle(position, field, charge, n_x, n_y, dx):
     """NGP deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
     # Normalize position to grid spacing
-    x = position[0] / dx - 0.5
-    y = position[1] / dx - 0.5
+    x = position[1] / dx - 0.5
+    y = position[0] / dx - 0.5
     
     i_lower = math.floor(x)
     j_lower = math.floor(y)
@@ -34,8 +34,8 @@ def deposit_ngp_particle(position, field, charge, n_x, n_y, dx):
 def deposit_cic_particle(position, field, charge, n_x, n_y, dx):
     """CIC deposit onto a 2D field.  Assumes dx = dy, and that x_min = y_min = 0.0."""
     # Shift to align the cell centers with the pixel centers
-    x = position[0] / dx - 0.5
-    y = position[1] / dx - 0.5
+    x = position[1] / dx - 0.5
+    y = position[0] / dx - 0.5
     
     # Indices of the lower left gridpoint of the cell the particle is in
     i_ll = math.floor(x)

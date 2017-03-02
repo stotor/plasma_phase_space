@@ -78,7 +78,10 @@ def save_density_field_attrs(folder, field_name, species, t, time, data, axis):
         h5f['AXIS/AXIS' + str(i+1)].attrs['LONG_NAME'] = 'x_' + str(i+1)
         h5f['AXIS/AXIS' + str(i+1)].attrs['NAME'] = 'x' + str(i+1)
         h5f['AXIS/AXIS' + str(i+1)].attrs['TYPE'] = 'linear'
-        h5f['AXIS/AXIS' + str(i+1)].attrs['UNITS'] = 'c / \omega_p'
+        if field_name[-1] == 'l':
+            h5f['AXIS/AXIS' + str(i+1)].attrs['UNITS'] = 'particles'
+        else:
+            h5f['AXIS/AXIS' + str(i+1)].attrs['UNITS'] = 'c / \omega_p'
         
     h5f.attrs['ITER'] = t
     h5f.attrs['NAME'] = field_name

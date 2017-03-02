@@ -1,4 +1,4 @@
-# Routines for calculating triangle quantities such as area
+"""Routines for calculating triangle quantities such as area """
 
 import numpy as np
 from mpi4py import MPI
@@ -7,6 +7,7 @@ import sys
 
 import PyPSI as psi
 
+import pic_calculations as pic
 import utilities
 import osiris_interface as oi
 import ship
@@ -67,147 +68,178 @@ def get_triangles_array(lagrangian_quantity_extended):
             triangles_array[2*i+1,:,:] = vertices_ur
     return triangles_array
 
-def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
-                                     output_folder, deposit_n_x, deposit_n_y):
-    # Load raw data to be deposited
-    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
-
-    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
-
-    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
-    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
-    n_cell_x = f_input.attrs['NX'][0]
-    n_cell_y = f_input.attrs['NX'][1]
-
-    cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
-
+def deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box, output_folder, species, t, time, axis):
     rank = cartcomm.Get_rank()
-    size = cartcomm.Get_size()
-    
-    n_cell_proc_x = n_cell_x / n_proc_x
-    n_cell_proc_y = n_cell_y / n_proc_y
-
-    n_p_total = f_input['x1'].shape[0]
-    n_ppc = n_p_total / (n_cell_x * n_cell_y)
-    n_ppc_x = utilities.int_nth_root(n_ppc, 2)
-    n_ppc_y = n_ppc_x
-
-    # Number of particles per processor
-    n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y
-    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
-    n_ppp_y = n_ppp_x
-
-    axis = np.zeros([2,2], dtype='double')
-    
-    axis[0,0] = f_input.attrs['XMIN'][0]
-    axis[0,1] = f_input.attrs['XMAX'][0]
-    axis[1,0] = f_input.attrs['XMIN'][1]
-    axis[1,1] = f_input.attrs['XMAX'][1]
-
-    deposit_dx = (axis[0,1] - axis[0,0]) / float(deposit_n_x)
-
-    if (rank==0):
-        t_start = MPI.Wtime()
-
-    # Get particle data for this processor's lagrangian subdomain
-    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
-
-    if (rank==0):
-        t_end = MPI.Wtime()
-        t_elapsed = t_end - t_start
-        print('Time for particle data shipping:')
-        print(t_elapsed)
-
-    time = f_input.attrs['TIME']
-
-    f_input.close()
-
-    particle_velocities = oi.momentum_to_velocity(particle_momentum)
-
-    # Add ghost column and row
-    particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
-    particle_velocities = particle_velocities.reshape(n_ppp_y, n_ppp_x, 3)
-    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
-    
-    # Extend to get the missing triangle vertices
-    if (rank==0):
-        t_start = MPI.Wtime()
-
-    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
-    particle_velocities_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
-    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
-
-    if (rank==0):
-        t_end = MPI.Wtime()
-        t_elapsed = t_end - t_start
-        print('Time for adding ghost zones:')
-        print(t_elapsed)
-
-    # Deposit using psi
-    # Create triangles arrays
-    pos = get_triangles_array(particle_positions_extended)
-    vel = get_triangles_array(particle_velocities_extended)
-    mom = get_triangles_array(particle_momentum_extended)
-
-    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
-    particle_charge = -1.0 / deposit_n_ppc
-
-    ntri = pos.shape[0]
-    charge = particle_charge * np.ones(ntri) / 2.0
-
-    # Parameters for PSI
-    grid = (deposit_n_x, deposit_n_y)
-    window = ((axis[0,0], axis[1,0]), (axis[0,1], axis[1,1]))
-    box = window
-
-    if (rank==0):
-        t_start = MPI.Wtime()
 
     fields = {'m': None, 'v': None} 
-    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    psi.elementMesh(fields, pos, np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     rho = fields['m']
     j3 = (fields['v'][:,:,0] * fields['m'])
     j2 = (fields['v'][:,:,1] * fields['m'])
     # Repeat for j1
     fields = {'m': None,'v': None} 
-    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
     j1 = (fields['v'][:,:,1] * fields['m'])
-
-    # Momentum fields
-    fields = {'m': None, 'v': None} 
-    psi.elementMesh(fields, np.array(pos, copy=True), np.array(mom[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
-    ufl3 = np.array(fields['v'][:,:,0] * fields['m'])
-    ufl2 = np.array(fields['v'][:,:,1] * fields['m'])
-    # Repeat for ufl1
-    fields = {'m': None,'v': None} 
-    psi.elementMesh(fields, np.array(pos, copy=True), np.array(mom[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
-    ufl1 = np.array(fields['v'][:,:,1] * fields['m'])
-
+    
     # Calcualate cell averaged number of streams
     fields = {'m': None}
-    psi.elementMesh(fields, np.array(pos, copy=True), np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True,
+    psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True,
                     weight='volume')
     streams = fields['m']
 
-    cartcomm.barrier()
+    # Reduce deposited fields
+    rho_total = np.zeros_like(rho)
+    j1_total = np.zeros_like(rho)
+    j2_total = np.zeros_like(rho)
+    j3_total = np.zeros_like(rho)
+    streams_total = np.zeros_like(rho)
+
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([streams, MPI.DOUBLE], [streams_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
     if (rank==0):
-        t_end = MPI.Wtime()
-        t_elapsed = t_end - t_start
-        print('Time for deposit:')
-        print(t_elapsed)
+        utilities.save_density_field_attrs(output_folder, 'charge-ed' , species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+
+        deposit_dx = (axis[0,1] - axis[0,0]) / float(grid[0])
+        streams_total = streams_total / deposit_dx**2
+        utilities.save_density_field_attrs(output_folder, 'streams-ed', species, t, time, streams_total, axis)
+    return
+
+
+def deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window, box, output_folder, species, t, time, axis):
+    rank = cartcomm.Get_rank()
+
+    # Momentum fields
+    fields = {'m': None, 'v': None, 'vv': None}
+    psi.elementMesh(fields, pos, np.array(mom[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    rho = fields['m']
+    uth3 = np.array((fields['vv'][:,:,0,0] + fields['v'][:,:,0]**2) * fields['m'])
+    uth2 = np.array((fields['vv'][:,:,1,1] + fields['v'][:,:,1]**2) * fields['m'])
+    ufl3 = np.array(fields['v'][:,:,0] * fields['m'])
+    ufl2 = np.array(fields['v'][:,:,1] * fields['m'])
+    # Repeat for ufl1
+    fields = {'m': None, 'v': None, 'vv': None}
+    psi.elementMesh(fields, pos, np.array(mom[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    uth1 = np.array((fields['vv'][:,:,1,1] + fields['v'][:,:,1]**2) * fields['m'])
+    ufl1 = np.array(fields['v'][:,:,1] * fields['m'])
+
+    rho_total = np.zeros_like(rho)
+    ufl1_total = np.zeros_like(rho)
+    ufl2_total = np.zeros_like(rho)
+    ufl3_total = np.zeros_like(rho)
+    uth1_total = np.zeros_like(rho)
+    uth2_total = np.zeros_like(rho)
+    uth3_total = np.zeros_like(rho)    
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([uth1, MPI.DOUBLE], [uth1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([uth2, MPI.DOUBLE], [uth2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([uth3, MPI.DOUBLE], [uth3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    if (rank==0):        
+        ufl1_total = ufl1_total / rho_total
+        ufl2_total = ufl2_total / rho_total
+        ufl3_total = ufl3_total / rho_total
+        utilities.save_density_field_attrs(output_folder, 'ufl1-ed', species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-ed', species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-ed', species, t, time, ufl3_total, axis)
+
+        # Eliminate negative numbers due to machine precision effects
+        uth1_total = uth1_total / rho_total - ufl1_total**2
+        uth2_total = uth2_total / rho_total - ufl2_total**2
+        uth3_total = uth3_total / rho_total - ufl3_total**2
+            
+        uth1_total[np.where(uth1_total<0.0)] = 0.0
+        uth2_total[np.where(uth2_total<0.0)] = 0.0
+        uth3_total[np.where(uth3_total<0.0)] = 0.0
+            
+        uth1_total = np.sqrt(uth1_total)
+        uth2_total = np.sqrt(uth2_total)
+        uth3_total = np.sqrt(uth3_total)
+
+        utilities.save_density_field_attrs(output_folder, 'uth1-ed', species, t, time, uth1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'uth2-ed', species, t, time, uth2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'uth3-ed', species, t, time, uth3_total, axis)
+
+    return
+
+def deposit_triangles_momentum_lagrangian(cartcomm, pos, mom, charge, grid, window, box, output_folder, species, t, time, axis):
+    rank = cartcomm.Get_rank()
+
+    # Momentum fields
+    fields = {'m': None, 'v': None}
+    psi.elementMesh(fields, pos, np.array(mom[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    rho = fields['m']
+    ufl3 = np.array(fields['v'][:,:,0] * fields['m'])
+    ufl2 = np.array(fields['v'][:,:,1] * fields['m'])
+    # Repeat for ufl1
+    fields = {'m': None, 'v': None}
+    psi.elementMesh(fields, pos, np.array(mom[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True)
+    ufl1 = np.array(fields['v'][:,:,1] * fields['m'])
 
     # Reduce deposited fields
-    rho_total = np.zeros(deposit_n_y * deposit_n_x).reshape(deposit_n_y, deposit_n_x)
-    j1_total = np.zeros_like(rho_total)
-    j2_total = np.zeros_like(rho_total)
-    j3_total = np.zeros_like(rho_total)
-    ufl1_total = np.zeros_like(rho_total)
-    ufl2_total = np.zeros_like(rho_total)
-    ufl3_total = np.zeros_like(rho_total)
-    streams_total = np.zeros_like(rho_total)
+    rho_total = np.zeros_like(rho) 
+    ufl1_total = np.zeros_like(rho)
+    ufl2_total = np.zeros_like(rho)
+    ufl3_total = np.zeros_like(rho)
 
-    if (rank==0):
-        t_start = MPI.Wtime()
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    if (rank==0):        
+        ufl1_total = ufl1_total / rho_total
+        ufl2_total = ufl2_total / rho_total
+        ufl3_total = ufl3_total / rho_total
+        utilities.save_density_field_attrs(output_folder, 'ufl1-ed-l', species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-ed-l', species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-ed-l', species, t, time, ufl3_total, axis)
+
+    return
+
+def deposit_particles(cartcomm, pos, mom, vel, charge, grid, window, box, output_folder, species, t, time, axis, deposit_type):
+    rank = cartcomm.Get_rank()
+
+    dx = (axis[0,1] - axis[0,0]) / float(grid[0])
+    n_y = grid[0]
+    n_x = grid[1]
+
+    rho = np.zeros(grid[0] * grid[1], dtype='float64').reshape(grid[0], grid[1])
+    j1 = np.zeros_like(rho)
+    j2 = np.zeros_like(rho)
+    j3 = np.zeros_like(rho)
+    ufl1 = np.zeros_like(rho)
+    ufl2 = np.zeros_like(rho)
+    ufl3 = np.zeros_like(rho)
+
+    # Current fields
+    pic.deposit_species(pos, rho, charge, n_x, n_y, dx, deposit_type)
+
+    pic.deposit_species(pos, j1, charge * vel[:, 2], n_x, n_y, dx, deposit_type)
+    pic.deposit_species(pos, j2, charge * vel[:, 1], n_x, n_y, dx, deposit_type)
+    pic.deposit_species(pos, j3, charge * vel[:, 0], n_x, n_y, dx, deposit_type)
+
+    pic.deposit_species(pos, ufl1, charge * mom[:, 2], n_x, n_y, dx, deposit_type)
+    pic.deposit_species(pos, ufl2, charge * mom[:, 1], n_x, n_y, dx, deposit_type)
+    pic.deposit_species(pos, ufl3, charge * mom[:, 0], n_x, n_y, dx, deposit_type)
+    
+    # Reduce deposited fields
+    rho_total = np.zeros_like(rho)
+    j1_total = np.zeros_like(rho)
+    j2_total = np.zeros_like(rho)
+    j3_total = np.zeros_like(rho)
+    ufl1_total = np.zeros_like(rho)
+    ufl2_total = np.zeros_like(rho)
+    ufl3_total = np.zeros_like(rho)
 
     cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
@@ -216,38 +248,221 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
     cartcomm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    cartcomm.Reduce([streams, MPI.DOUBLE], [streams_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     if (rank==0):
-        t_end = MPI.Wtime()
-        t_elapsed = t_end - t_start
-        print('Time for parallel field reduction:')
-        print(t_elapsed)
+        utilities.save_density_field_attrs(output_folder, 'charge-' + deposit_type, species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-' + deposit_type, species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-' + deposit_type, species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-' + deposit_type, species, t, time, j3_total, axis)
+
+        zero_indices = np.where(rho_total==0.0)
+        rho_total[zero_indices] = 10.0**16
+        
+        ufl1_total = ufl1_total / rho_total
+        ufl2_total = ufl2_total / rho_total
+        ufl3_total = ufl3_total / rho_total
+        ufl1_total[zero_indices] = 0.0
+        ufl2_total[zero_indices] = 0.0
+        ufl3_total[zero_indices] = 0.0
+        
+        utilities.save_density_field_attrs(output_folder, 'ufl1-' + deposit_type, species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-' + deposit_type, species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-' + deposit_type, species, t, time, ufl3_total, axis)
+
+    return
+
+def deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box, output_folder, species, t, time, axis, deposit):
+    rank = cartcomm.Get_rank()
+
+    # Current fields
+    fields = {'m': None, 'v': None} 
+    psi.particleMesh(fields, pos, np.array(vel[:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
+    rho = fields['m']
+    j3 = np.array(fields['v'][:,:,0], copy=True)
+    j2 = np.array(fields['v'][:,:,1], copy=True)
+
+    # Repeat for j1
+    fields = {'m': None,'v': None} 
+    psi.particleMesh(fields, pos, np.array(vel[:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
+    j1 = np.array(fields['v'][:,:,1], copy=True)
+
+    # Momentum fields
+    fields = {'m': None, 'v': None}
+    psi.particleMesh(fields, pos, np.array(mom[:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
+    ufl3 = np.array(fields['v'][:,:,0], copy=True)
+    ufl2 = np.array(fields['v'][:,:,1], copy=True)
+    # Repeat for ufl1
+    fields = {'m': None, 'v': None}
+    psi.particleMesh(fields, pos, np.array(mom[:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
+    ufl1 = np.array(fields['v'][:,:,1], copy=True)
+    
+    # Reduce deposited fields
+    rho_total = np.zeros_like(rho)
+    j1_total = np.zeros_like(rho)
+    j2_total = np.zeros_like(rho)
+    j3_total = np.zeros_like(rho)
+    ufl1_total = np.zeros_like(rho)
+    ufl2_total = np.zeros_like(rho)
+    ufl3_total = np.zeros_like(rho)
+
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl1, MPI.DOUBLE], [ufl1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl2, MPI.DOUBLE], [ufl2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    if (rank==0):
+        utilities.save_density_field_attrs(output_folder, 'charge-' + deposit, species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-' + deposit, species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-' + deposit, species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-' + deposit, species, t, time, j3_total, axis)
+
+        zero_indices = np.where(rho_total==0.0)
+        rho_total[zero_indices] = 10.0**16
+        
+        ufl1_total = ufl1_total / rho_total
+        ufl2_total = ufl2_total / rho_total
+        ufl3_total = ufl3_total / rho_total
+        ufl1_total[zero_indices] = 0.0
+        ufl2_total[zero_indices] = 0.0
+        ufl3_total[zero_indices] = 0.0
+        
+        utilities.save_density_field_attrs(output_folder, 'ufl1-' + deposit, species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-' + deposit, species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-' + deposit, species, t, time, ufl3_total, axis)
+
+    return
+
+
+
+def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
+                                     output_folder, deposit_n_x, deposit_n_y):
+    input_filename = raw_folder + '/RAW-' + species + '-' + str(t).zfill(6) + '.h5'
+
+    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
+
+    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
+    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
+
+    cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
+
+    rank = cartcomm.Get_rank()
+    coords = cartcomm.Get_coords(rank)
+    size = cartcomm.Get_size()
+
+    n_p_total = f_input['x1'].shape[0]
+    n_ppp = n_p_total / (n_proc_x * n_proc_y)
+    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
+    n_ppp_y = n_ppp_x
+
+    axis = np.zeros([2,2], dtype='double')    
+    axis[0,0] = f_input.attrs['XMIN'][0]
+    axis[0,1] = f_input.attrs['XMAX'][0]
+    axis[1,0] = f_input.attrs['XMIN'][1]
+    axis[1,1] = f_input.attrs['XMAX'][1]
+
+    axis_lagrangian = np.zeros_like(axis)
+    axis_lagrangian[0,0] = 0.0
+    axis_lagrangian[0,1] = n_proc_y * n_ppp_y
+    axis_lagrangian[1,0] = 0.0
+    axis_lagrangian[1,1] = n_proc_x * n_ppp_x
 
     if (rank==0):
         t_start = MPI.Wtime()
 
-    # Save final field
-    if (rank==0):
-        utilities.save_density_field_attrs(output_folder, 'charge-ed', species, t, time, rho_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j1-ed', species, t, time, j1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j2-ed', species, t, time, j2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j3-ed', species, t, time, j3_total, axis)
+    # Get particle data for this processor's lagrangian subdomain
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
 
-        ufl1_total = ufl1_total / rho_total
-        ufl2_total = ufl2_total / rho_total
-        ufl3_total = ufl3_total / rho_total
-        utilities.save_density_field_attrs(output_folder, 'ufl1-ed', species, t, time, ufl1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'ufl2-ed', species, t, time, ufl2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'ufl3-ed', species, t, time, ufl3_total, axis)
-        
-        streams_total = streams_total / deposit_dx**2
-        utilities.save_density_field_attrs(output_folder, 'streams-ed', species, t, time, streams_total, axis)
+
+    time = f_input.attrs['TIME']
+
+    f_input.close()
+
+    # Parameters for PSI
+    grid = (deposit_n_x, deposit_n_y)
+    window = ((axis[0,0], axis[1,0]), (axis[0,1], axis[1,1]))
+    box = window
+    window_lagrangian = ((axis_lagrangian[0,0], axis_lagrangian[1,0]), (axis_lagrangian[0,1], axis_lagrangian[1,1]))
+    box_lagrangian = window_lagrangian
+
+    particle_velocities = oi.momentum_to_velocity(particle_momentum)
+
+    # First do particle deposits
+    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
+    particle_charge = -1.0 / deposit_n_ppc
+    charge = particle_charge * np.ones(n_ppp)
+    pos = particle_positions
+    mom = particle_momentum
+    vel = particle_velocities
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box,
+                          output_folder, species, t, time, axis, deposit='ngp')
 
     if (rank==0):
         t_end = MPI.Wtime()
         t_elapsed = t_end - t_start
-        print('Time for saving field:')
+        print('Time for NGP deposit:')
+        print(t_elapsed)
+
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+        
+    deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box,
+                          output_folder, species, t, time, axis, deposit='cic')
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for CIC deposit:')
+        print(t_elapsed)
+
+    # Next do triangle deposits
+    particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
+    particle_velocities = particle_velocities.reshape(n_ppp_y, n_ppp_x, 3)
+    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
+    
+    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
+    particle_velocities_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
+    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
+
+    n_l_x = n_ppp_x + 1
+    n_l_y = n_ppp_y + 1
+
+    lagrangian_positions_extended = np.zeros([n_l_y, n_l_x, 2], dtype='float64')
+    lagrangian_positions_extended[:,:,0] = np.repeat(np.arange(0, n_l_y, 1), n_l_x).reshape(n_l_y, n_l_x) + coords[0] * n_ppp_y
+    lagrangian_positions_extended[:,:,1] = np.tile(np.arange(0, n_l_x, 1), n_l_y).reshape(n_l_y, n_l_x) + coords[1] * n_ppp_x
+
+    # Deposit using psi
+    # Create triangles arrays
+    pos = np.array(get_triangles_array(particle_positions_extended), copy=True)
+    pos_lagrangian = np.array(get_triangles_array(lagrangian_positions_extended), copy=True)
+    
+    vel = np.array(get_triangles_array(particle_velocities_extended), copy=True)
+    mom = np.array(get_triangles_array(particle_momentum_extended), copy=True)
+
+    ntri = pos.shape[0]
+    charge = particle_charge * np.ones(ntri) / 2.0
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+    deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box,
+                              output_folder, species, t, time, axis)
+    deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window, box,
+                               output_folder, species, t, time, axis)
+    deposit_triangles_momentum_lagrangian(cartcomm, pos_lagrangian, mom, charge,
+                                          grid, window_lagrangian,
+                                          box_lagrangian, output_folder,
+                                          species, t, time, axis_lagrangian)
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for triangle deposit:')
         print(t_elapsed)
 
     return
