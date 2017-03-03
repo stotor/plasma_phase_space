@@ -22,7 +22,7 @@ deposit_n_x = int(sys.argv[3])
 deposit_n_y = int(sys.argv[4])
 
 raw_folder = simulation_folder + '/MS/RAW/' + species + '/'
-output_folder = simulation_folder + '/' + str(deposit_n_x) + 'x' + str(deposit_n_y) + '/'
+output_folder = simulation_folder
 
 t_array = oi.get_HIST_time(simulation_folder)
 
