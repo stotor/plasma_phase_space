@@ -193,3 +193,43 @@ def ship_particle_data(comm, raw_h5f, dim):
         print(t_elapsed)
 
     return [particle_positions, particle_momentum]
+
+def ship_particle_data_serial(raw_h5f):
+    n_p_total = raw_h5f['x1'].shape[0]
+    n_cell_x = raw_h5f.attrs['NX'][0]
+    n_cell_y = raw_h5f.attrs['NX'][1]
+    n_ppc = n_p_total / (n_cell_x * n_cell_y)
+    n_ppc_x = utilities.int_nth_root(n_ppc, 2)
+    n_ppc_y = n_ppc_x
+
+    particle_tags = raw_h5f['tag'][:,1]
+    x1 = raw_h5f['x1'][:]
+    x2 = raw_h5f['x2'][:]
+    p1 = raw_h5f['p1'][:]
+    p2 = raw_h5f['p2'][:]
+    p3 = raw_h5f['p3'][:]
+
+    lagrangian_id = oi.osiris_tag_to_lagrangian(particle_tags,
+                                                n_cell_x,
+                                                n_cell_y,
+                                                n_ppc_x,
+                                                n_ppc_y)
+
+    lagrangian_sorting_keys = np.argsort(lagrangian_id)
+    
+    particle_tags = particle_tags[lagrangian_sorting_keys]
+    x1 = x1[lagrangian_sorting_keys]
+    x2 = x2[lagrangian_sorting_keys]
+    p1 = p1[lagrangian_sorting_keys]
+    p2 = p2[lagrangian_sorting_keys]
+    p3 = p3[lagrangian_sorting_keys]
+
+    particle_positions = np.zeros([n_p_total, 2])
+    particle_positions[:,0] = x2
+    particle_positions[:,1] = x1
+    particle_momentum = np.zeros([n_p_total, 3])
+    particle_momentum[:,0] = p3
+    particle_momentum[:,1] = p2
+    particle_momentum[:,2] = p1
+
+    return [particle_positions, particle_momentum, particle_tags]

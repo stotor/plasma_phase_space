@@ -111,6 +111,49 @@ def deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box, out
         utilities.save_density_field_attrs(output_folder, 'streams-ed', species, t, time, streams_total, axis)
     return
 
+def deposit_triangles_current_points(cartcomm, pos, vel, charge, grid, window, box, output_folder, species, t, time, axis):
+    rank = cartcomm.Get_rank()
+
+    fields = {'m': None, 'v': None} 
+    psi.elementMesh(fields, pos, np.array(vel[:,:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling='point')
+    rho = fields['m']
+    j3 = (fields['v'][:,:,0] * fields['m'])
+    j2 = (fields['v'][:,:,1] * fields['m'])
+    # Repeat for j1
+    fields = {'m': None,'v': None} 
+    psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling='point')
+    j1 = (fields['v'][:,:,1] * fields['m'])
+    
+    # Calcualate cell averaged number of streams
+    fields = {'m': None}
+    psi.elementMesh(fields, pos, np.array(vel[:,:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True,
+                    weight='volume', sampling='point')
+    streams = fields['m']
+
+    # Reduce deposited fields
+    rho_total = np.zeros_like(rho)
+    j1_total = np.zeros_like(rho)
+    j2_total = np.zeros_like(rho)
+    j3_total = np.zeros_like(rho)
+    streams_total = np.zeros_like(rho)
+
+    cartcomm.Reduce([rho, MPI.DOUBLE], [rho_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j1, MPI.DOUBLE], [j1_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j2, MPI.DOUBLE], [j2_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([j3, MPI.DOUBLE], [j3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+    cartcomm.Reduce([streams, MPI.DOUBLE], [streams_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+
+    if (rank==0):
+        utilities.save_density_field_attrs(output_folder, 'charge-ed-p' , species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-ed-p', species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-ed-p', species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-ed-p', species, t, time, j3_total, axis)
+
+        deposit_dx = (axis[0,1] - axis[0,0]) / float(grid[0])
+        streams_total = streams_total / deposit_dx**2
+        utilities.save_density_field_attrs(output_folder, 'streams-ed-p', species, t, time, streams_total, axis)
+    return
+
 
 def deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window, box, output_folder, species, t, time, axis):
     rank = cartcomm.Get_rank()
@@ -507,6 +550,8 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
                                           grid, window_lagrangian,
                                           box_lagrangian, output_folder + sub_folder,
                                           species, t, time, axis_lagrangian)
+    deposit_triangles_current_points(cartcomm, pos, vel, charge, grid, window, box,
+                                     output_folder + sub_folder, species, t, time, axis)
 
     deposit_triangles_current(cartcomm, pos, vel, charge_r, grid_r, window, box,
                               output_folder + sub_folder_r, species, t, time, axis)
@@ -516,6 +561,9 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
                                           grid_r, window_lagrangian,
                                           box_lagrangian, output_folder + sub_folder_r,
                                           species, t, time, axis_lagrangian)
+    deposit_triangles_current_points(cartcomm, pos, vel, charge_r, grid_r, window, box,
+                                     output_folder + sub_folder_r, species, t, time, axis)
+
 
     if (rank==0):
         t_end = MPI.Wtime()
@@ -840,6 +888,140 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
             h5f['sample_' + str(i)].attrs['x'] = sample_locations[i][1]
             h5f['sample_' + str(i)].attrs['y'] = sample_locations[i][0]
             h5f['sample_' + str(i)].attrs['time'] = time
+
+    if (rank==0):
+            h5f.close()
+
+    return
+
+def distribution_save_triangles(comm, species, t, raw_folder, output_folder):
+    # Load raw data to be deposited
+    input_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
+
+    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
+
+    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
+    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
+    n_cell_x = f_input.attrs['NX'][0]
+    n_cell_y = f_input.attrs['NX'][1]
+
+    l_x = f_input.attrs['XMAX'][0] - f_input.attrs['XMIN'][0]
+    l_y = f_input.attrs['XMAX'][1] - f_input.attrs['XMIN'][1]
+
+    cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
+
+    rank = cartcomm.Get_rank()
+    size = cartcomm.Get_size()
+    
+    n_cell_proc_x = n_cell_x / n_proc_x
+    n_cell_proc_y = n_cell_y / n_proc_y
+
+    n_p_total = f_input['x1'].shape[0]
+    n_ppc = n_p_total / (n_cell_x * n_cell_y)
+    n_ppc_x = utilities.int_nth_root(n_ppc, 2)
+    n_ppc_y = n_ppc_x
+
+    # Number of particles per processor
+    n_ppp = n_ppc * n_cell_proc_x * n_cell_proc_y
+    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
+    n_ppp_y = n_ppp_x
+
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    # Get particle data for this processor's lagrangian subdomain
+    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm, f_input, 2)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for particle data shipping:')
+        print(t_elapsed)
+
+    time = f_input.attrs['TIME']
+
+    f_input.close()
+
+    # Add ghost column and row
+    particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
+    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
+    
+    # Extend to get the missing triangle vertices
+    if (rank==0):
+        t_start = MPI.Wtime()
+
+    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
+    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
+
+    if (rank==0):
+        t_end = MPI.Wtime()
+        t_elapsed = t_end - t_start
+        print('Time for adding ghost zones:')
+        print(t_elapsed)
+
+    # Create triangles arrays
+    pos = get_triangles_array(particle_positions_extended)
+    momentum = get_triangles_array(particle_momentum_extended)
+
+    # Open output file
+    if (rank==0):
+        utilities.ensure_folder_exists(output_folder)
+        filename = output_folder + 'distribution_functions-' + species + '-' + str(t).zfill(6) + '.h5'
+        h5f = h5py.File(filename, 'w')
+
+    # Loop over sample locations and calculate distribution function
+    sample_position = np.ones([pos.shape[0],2], dtype='float64')
+    sample_position[:,1] = sample_locations[i][1]
+    sample_position[:,0] = sample_locations[i][0]
+    # Shift triangle vertices to account for periodic boundaries
+    max_x = np.amax(pos[:,:,1], axis=1)
+    max_y = np.amax(pos[:,:,0], axis=1)
+    shift_x = (max_x[:,None] - pos[:,:,1]) > (l_x/2.0)
+    shift_y = (max_y[:,None] - pos[:,:,0]) > (l_y/2.0)
+    pos[:,:,0] = pos[:,:,0] + shift_y * l_y
+    pos[:,:,1] = pos[:,:,1] + shift_x * l_x
+    
+    max_x = np.amax(pos[:,:,1], axis=1)
+    max_y = np.amax(pos[:,:,0], axis=1)
+    shift_x = (max_x - sample_position[:,1]) >= l_x
+    shift_y = (max_y - sample_position[:,0]) >= l_y
+    sample_position[:,1] = sample_position[:,1] + shift_x * l_x
+    sample_position[:,0] = sample_position[:,0] + shift_y * l_y
+
+    # Calculate area of triangle    
+    det = (pos[:,1,0]-pos[:,2,0])*(pos[:,0,1]-pos[:,2,1])+(pos[:,2,1]-pos[:,1,1])*(pos[:,0,0]-pos[:,2,0])
+    
+    # Send this processor's number of streams to root
+    n_streams = np.zeros(size, dtype='int32')
+    n_streams[rank] = len(sample_indices)
+    
+    n_streams_total = np.zeros_like(n_streams)
+    cartcomm.Reduce([n_streams, MPI.INT], [n_streams_total, MPI.INT], op = MPI.SUM, root = 0)
+    
+    # Scatter start indices and broadcast total number of entries
+    total_streams = np.zeros(1, dtype='int32')
+    start_indices = np.zeros(size, dtype='int32')
+    if (rank==0):
+        end_indices = np.cumsum(n_streams_total, dtype='int32')
+        total_streams = end_indices[-1]
+        start_indices = np.roll(end_indices, 1)
+        start_indices[0] = 0
+
+    cartcomm.Bcast([total_streams, MPI.INT])
+    start_index = np.empty(1, dtype='int32')
+    cartcomm.Scatter([start_indices, MPI.INT], [start_index, MPI.INT])
+    
+    end_index = start_index + len(sample_indices)
+    
+    # Save distribution functions
+    if (rank==0):
+        h5f.create_dataset('sample_' + str(i) + '/px', data=px_dist_total)
+        h5f.create_dataset('sample_' + str(i) + '/py', data=py_dist_total)
+        h5f.create_dataset('sample_' + str(i) + '/pz', data=pz_dist_total)
+        h5f.create_dataset('sample_' + str(i) + '/area', data=area_dist_total)
+        h5f['sample_' + str(i)].attrs['x'] = sample_locations[i][1]
+        h5f['sample_' + str(i)].attrs['y'] = sample_locations[i][0]
+        h5f['sample_' + str(i)].attrs['time'] = time
 
     if (rank==0):
             h5f.close()

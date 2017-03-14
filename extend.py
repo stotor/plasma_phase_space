@@ -31,11 +31,27 @@ def extend_lagrangian_quantity_2d(cartcomm, l_quant):
 
     return l_quant_extended
 
+def extend_lagrangian_quantity_2d_serial(l_quant):
+    l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]], dtype=l_quant.dtype)
+
+    l_quant_extended[:-1,:-1,:] = l_quant
+
+    x1_face_send = np.array(l_quant_extended[:-1,0,:], copy=True)
+    x1_face_recv = x1_face_send
+    l_quant_extended[:-1,-1,:] = x1_face_recv
+
+    x2_face_send = np.array(l_quant_extended[0,:,:], copy=True)
+    x2_face_recv = x2_face_send
+    l_quant_extended[-1,:,:] = x2_face_recv
+
+    return l_quant_extended
+
+
 def extend_lagrangian_quantity_3d(cartcomm, l_quant):
     rank = cartcomm.Get_rank()
 
     l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]+1,l_quant.shape[3]], 
-                                dtype='double')
+                                dtype=lquant.dtype)
 
     l_quant_extended[:-1,:-1,:-1,:] = l_quant
 
