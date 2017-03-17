@@ -72,6 +72,7 @@ def save_density_field_attrs(folder, field_name, species, t, time, data, axis):
         h5f[field_name].attrs['UNITS'] = 'e \omega_p^3/ c^3'
     
     axis = np.array(axis)
+    axis = axis[::-1,:]
     dim = axis.shape[0]
     for i in range(dim):
         h5f.create_dataset('AXIS/AXIS' + str(i+1), data=axis[i,:])
