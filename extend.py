@@ -51,7 +51,7 @@ def extend_lagrangian_quantity_3d(cartcomm, l_quant):
     rank = cartcomm.Get_rank()
 
     l_quant_extended = np.zeros([l_quant.shape[0]+1,l_quant.shape[1]+1,l_quant.shape[2]+1,l_quant.shape[3]], 
-                                dtype=lquant.dtype)
+                                dtype=l_quant.dtype)
 
     l_quant_extended[:-1,:-1,:-1,:] = l_quant
 
