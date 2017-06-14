@@ -47,7 +47,7 @@ void deposit_particle_2d_0(double x, double y, double *field, double charge,
 void deposit_particle_2d_1(double x, double y, double *field, double charge,
 			   int n_x, int n_y, double cell_width)
 {
-  int i_ll, j_ll;
+  int i, j, i_ll, j_ll;
   double dx, dy, wx[2], wy[2];
   
   x = x / cell_width - 0.5;
@@ -65,8 +65,8 @@ void deposit_particle_2d_1(double x, double y, double *field, double charge,
   wy[0] = 0.5 - dy;
   wy[1] = 0.5 + dy;
 
-  for (int j=0; j<2; j++) {
-    for (int i=0; i<2; i++) {
+  for (j=0; j<2; j++) {
+    for (i=0; i<2; i++) {
       field[field_index(j_ll+j, i_ll+i, n_y, n_x)] += charge * wx[i] * wy[j];
     }
   }
@@ -77,7 +77,7 @@ void deposit_particle_2d_1(double x, double y, double *field, double charge,
 void deposit_particle_2d_2(double x, double y, double *field, double charge,
 			   int n_x, int n_y, double cell_width)
 {
-  int i_ll, j_ll, i_ngp, j_ngp;
+  int i, j, i_ll, j_ll, i_ngp, j_ngp;
   double dx, dy, wx[3], wy[3];
   
   x = x / cell_width - 0.5;
@@ -109,8 +109,8 @@ void deposit_particle_2d_2(double x, double y, double *field, double charge,
   wy[1] = 0.75 - dy * dy;
   wy[2] = pow((1.0 + 2.0 * dy), 2) / 8.0;
 
-  for (int j=0; j<3; j++) {
-    for (int i=0; i<3; i++) {
+  for (j=0; j<3; j++) {
+    for (i=0; i<3; i++) {
       field[field_index(j_ngp-1+j, i_ngp-1+i, n_y, n_x)] += charge * wx[i] * wy[j];
     }
   }
@@ -121,7 +121,7 @@ void deposit_particle_2d_2(double x, double y, double *field, double charge,
 void deposit_particle_2d_3(double x, double y, double *field, double charge,
 			   int n_x, int n_y, double cell_width)
 {
-  int i_ll, j_ll;
+  int i, j, i_ll, j_ll;
   double dx, dy, wx[4], wy[4];
   
   x = x / cell_width - 0.5;
@@ -143,8 +143,8 @@ void deposit_particle_2d_3(double x, double y, double *field, double charge,
   wy[2] = (23.0 + 30.0 * dy - 12.0 * dy * dy - 24.0 * dy * dy * dy) / 48.0;
   wy[3] = pow((0.5 + dy), 3) / 6.0;
 
-  for (int j=0; j<4; j++) {
-    for (int i=0; i<4; i++) {
+  for (j=0; j<4; j++) {
+    for (i=0; i<4; i++) {
       field[field_index(j_ll-1+j, i_ll-1+i, n_y, n_x)] += charge * wx[i] * wy[j];
     }
   }
@@ -155,7 +155,7 @@ void deposit_particle_2d_3(double x, double y, double *field, double charge,
 void deposit_particle_2d_4(double x, double y, double *field, double charge,
 			   int n_x, int n_y, double cell_width)
 {
-  int i_ll, j_ll, i_ngp, j_ngp;
+  int i, j, i_ll, j_ll, i_ngp, j_ngp;
   double dx, dy, wx[5], wy[5];
   
   x = x / cell_width - 0.5;
@@ -192,8 +192,8 @@ void deposit_particle_2d_4(double x, double y, double *field, double charge,
   wy[4] = pow((1.0 + 2.0 * dy), 4) / 384.0;
 
 
-  for (int j=0; j<5; j++) {
-    for (int i=0; i<5; i++) {
+  for (j=0; j<5; j++) {
+    for (i=0; i<5; i++) {
       field[field_index(j_ngp-2+j, i_ngp-2+i, n_y, n_x)] += charge * wx[i] * wy[j];
     }
   }
@@ -205,38 +205,39 @@ void deposit_species(double *particle_positions, double *field,
 		     double *particle_charges, int n_x, int n_y, int n_p,
 		     double cell_width, int order)
 {
+  int i;
   switch (order)
     {
     case 0 :
-      for (int i=0; i<n_p; i++) {
+      for (i=0; i<n_p; i++) {
 	deposit_particle_2d_0(particle_positions[2*i+1], particle_positions[2*i],
 			      field, particle_charges[i], n_x, n_y, cell_width);
       }
       break;
       
     case 1 :
-      for (int i=0; i<n_p; i++) {
+      for (i=0; i<n_p; i++) {
 	deposit_particle_2d_1(particle_positions[2*i+1], particle_positions[2*i],
 			      field, particle_charges[i], n_x, n_y, cell_width);
       }
       break;
       
     case 2 :
-      for (int i=0; i<n_p; i++) {
+      for (i=0; i<n_p; i++) {
 	deposit_particle_2d_2(particle_positions[2*i+1], particle_positions[2*i],
 			      field, particle_charges[i], n_x, n_y, cell_width);
       }
       break;
       
     case 3 :
-      for (int i=0; i<n_p; i++) {
+      for (i=0; i<n_p; i++) {
 	deposit_particle_2d_3(particle_positions[2*i+1], particle_positions[2*i],
 			      field, particle_charges[i], n_x, n_y, cell_width);
       }
       
       break;
     case 4 :
-      for (int i=0; i<n_p; i++) {
+      for (i=0; i<n_p; i++) {
 	deposit_particle_2d_4(particle_positions[2*i+1], particle_positions[2*i],
 			      field, particle_charges[i], n_x, n_y, cell_width);
       }
