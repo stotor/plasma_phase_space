@@ -437,30 +437,32 @@ def deposit_particles(cartcomm, pos, mom, vel, charge, grid, window, box,
 
     return
 
-def deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box, output_folder, species, t, time, axis, deposit):
+def deposit_particles_ctypes(cartcomm, pos, mom, vel, charge, grid, window, box,
+                             output_folder, species, t, time, axis, deposit_type):
     rank = cartcomm.Get_rank()
 
+    dx = (axis[0,1] - axis[0,0]) / float(grid[0])
+    n_y = grid[0]
+    n_x = grid[1]
+
+    rho = np.zeros(grid[0] * grid[1], dtype='float64').reshape(grid[0], grid[1])
+    j1 = np.zeros_like(rho)
+    j2 = np.zeros_like(rho)
+    j3 = np.zeros_like(rho)
+    ufl1 = np.zeros_like(rho)
+    ufl2 = np.zeros_like(rho)
+    ufl3 = np.zeros_like(rho)
+
     # Current fields
-    fields = {'m': None, 'v': None} 
-    psi.particleMesh(fields, pos, np.array(vel[:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
-    rho = fields['m']
-    j3 = np.array(fields['v'][:,:,0], copy=True)
-    j2 = np.array(fields['v'][:,:,1], copy=True)
+    pic.deposit_species_ctypes(pos, rho, charge, n_x, n_y, dx, deposit_type)
 
-    # Repeat for j1
-    fields = {'m': None,'v': None} 
-    psi.particleMesh(fields, pos, np.array(vel[:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
-    j1 = np.array(fields['v'][:,:,1], copy=True)
+    pic.deposit_species_ctypes(pos, j1, charge * vel[:, 2], n_x, n_y, dx, deposit_type)
+    pic.deposit_species_ctypes(pos, j2, charge * vel[:, 1], n_x, n_y, dx, deposit_type)
+    pic.deposit_species_ctypes(pos, j3, charge * vel[:, 0], n_x, n_y, dx, deposit_type)
 
-    # Momentum fields
-    fields = {'m': None, 'v': None}
-    psi.particleMesh(fields, pos, np.array(mom[:,:2], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
-    ufl3 = np.array(fields['v'][:,:,0], copy=True)
-    ufl2 = np.array(fields['v'][:,:,1], copy=True)
-    # Repeat for ufl1
-    fields = {'m': None, 'v': None}
-    psi.particleMesh(fields, pos, np.array(mom[:,1:], copy=True), charge, grid=grid, window=window, box=box, periodic=True, sampling=deposit)
-    ufl1 = np.array(fields['v'][:,:,1], copy=True)
+    pic.deposit_species_ctypes(pos, ufl1, charge * mom[:, 2], n_x, n_y, dx, deposit_type)
+    pic.deposit_species_ctypes(pos, ufl2, charge * mom[:, 1], n_x, n_y, dx, deposit_type)
+    pic.deposit_species_ctypes(pos, ufl3, charge * mom[:, 0], n_x, n_y, dx, deposit_type)
     
     # Reduce deposited fields
     rho_total = np.zeros_like(rho)
@@ -480,10 +482,10 @@ def deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box, ou
     cartcomm.Reduce([ufl3, MPI.DOUBLE], [ufl3_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     if (rank==0):
-        utilities.save_density_field_attrs(output_folder, 'charge-' + deposit, species, t, time, rho_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j1-' + deposit, species, t, time, j1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j2-' + deposit, species, t, time, j2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'j3-' + deposit, species, t, time, j3_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'charge-' + deposit_type, species, t, time, rho_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j1-' + deposit_type, species, t, time, j1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j2-' + deposit_type, species, t, time, j2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'j3-' + deposit_type, species, t, time, j3_total, axis)
 
         zero_indices = np.where(rho_total==0.0)
         rho_total[zero_indices] = 10.0**16
@@ -495,172 +497,9 @@ def deposit_particles_psi(cartcomm, pos, mom, vel, charge, grid, window, box, ou
         ufl2_total[zero_indices] = 0.0
         ufl3_total[zero_indices] = 0.0
         
-        utilities.save_density_field_attrs(output_folder, 'ufl1-' + deposit, species, t, time, ufl1_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'ufl2-' + deposit, species, t, time, ufl2_total, axis)
-        utilities.save_density_field_attrs(output_folder, 'ufl3-' + deposit, species, t, time, ufl3_total, axis)
-
-    return
-
-
-
-def save_triangle_fields_parallel_2d_old(comm, species, t, raw_folder,
-                                     output_folder, deposit_n_x, deposit_n_y):
-    input_filename = raw_folder + '/RAW-' + species + '-' + str(t).zfill(6) + '.h5'
-
-    f_input = h5py.File(input_filename, 'r', driver='mpio', comm=comm)
-
-    n_proc_x = f_input.attrs['PAR_NODE_CONF'][0]
-    n_proc_y = f_input.attrs['PAR_NODE_CONF'][1]
-
-    cartcomm = comm.Create_cart([n_proc_y, n_proc_x], periods=[True,True])
-
-    rank = cartcomm.Get_rank()
-    coords = cartcomm.Get_coords(rank)
-
-    n_p_total = f_input['x1'].shape[0]
-    n_ppp = n_p_total / (n_proc_x * n_proc_y)
-    n_ppp_x = utilities.int_nth_root(n_ppp, 2)
-    n_ppp_y = n_ppp_x
-
-    axis = np.zeros([2,2], dtype='double')    
-    axis[0,0] = f_input.attrs['XMIN'][0]
-    axis[0,1] = f_input.attrs['XMAX'][0]
-    axis[1,0] = f_input.attrs['XMIN'][1]
-    axis[1,1] = f_input.attrs['XMAX'][1]
-
-    l_x = axis[0,1] - axis[0,0]
-    l_y = axis[1,1] - axis[1,0]
-
-    axis_lagrangian = np.zeros_like(axis)
-    axis_lagrangian[0,0] = 0.0
-    axis_lagrangian[0,1] = n_proc_y * n_ppp_y
-    axis_lagrangian[1,0] = 0.0
-    axis_lagrangian[1,1] = n_proc_x * n_ppp_x
-
-    axis_p2p1 = np.zeros_like(axis)
-    axis_p2p1[0,0] = -1.0
-    axis_p2p1[0,1] = 1.0
-    axis_p2p1[1,0] = -0.5
-    axis_p2p1[1,1] = 1.5
-
-    if (rank==0):
-        t_start = MPI.Wtime()
-
-    # Get particle data for this processor's lagrangian subdomain
-    [particle_positions, particle_momentum] = ship.ship_particle_data(cartcomm,
-                                                                      f_input, 2)
-
-    if (rank==0):
-        t_end = MPI.Wtime()
-        t_elapsed = t_end - t_start
-        print('Time for particle data shipping:')
-        print(t_elapsed)
-
-    time = f_input.attrs['TIME']
-
-    f_input.close()
-
-    # Parameters for PSI
-    window = ((axis[0,0], axis[1,0]), (axis[0,1], axis[1,1]))
-    box = window
-    
-    window_lagrangian = ((axis_lagrangian[0,0], axis_lagrangian[1,0]), (axis_lagrangian[0,1], axis_lagrangian[1,1]))
-    box_lagrangian = window_lagrangian
-
-    window_p2p1 = ((axis_p2p1[0,0], axis_p2p1[1,0]), (axis_p2p1[0,1], axis_p2p1[1,1]))
-    box_p2p1 = window_p2p1
-    
-    particle_velocities = oi.momentum_to_velocity(particle_momentum)
-
-    # First do particle deposits
-    deposit_n_ppc = n_p_total / float(deposit_n_x * deposit_n_y)
-    particle_charge = -1.0 / deposit_n_ppc
-    pos = particle_positions
-    mom = particle_momentum
-    vel = particle_velocities
-
-    refine_list = [1]
-    
-    for refine in refine_list:
-        sub_folder = '/' + str(deposit_n_x*refine) + 'x' + str(deposit_n_y*refine) + '/'
-        charge = particle_charge * np.ones(n_ppp) * refine**2
-        grid = (deposit_n_x*refine, deposit_n_y*refine)
-        for deposit in ['ngp', 'cic', 'quadratic', 'cubic', 'quartic']:
-            if (rank==0):
-                t_start = MPI.Wtime()
-
-            deposit_particles(cartcomm, pos, mom, vel, charge, grid, window,
-                                  box, output_folder + sub_folder, species, t,
-                                  time, axis, deposit=deposit)
-#            deposit_particles_p2p1(cartcomm, mom, charge, grid, window_p2p1,
-#                                   box_p2p1, output_folder + sub_folder,
-#                                   species, t, time, axis_p2p1, deposit=deposit)
-            if (rank==0):
-                t_end = MPI.Wtime()
-                t_elapsed = t_end - t_start
-                print('Time for ' + deposit.upper() + ' deposit:')
-                print(t_elapsed)
-
-    # Next do triangle deposits
-    particle_positions = particle_positions.reshape(n_ppp_y, n_ppp_x, 2)
-    particle_velocities = particle_velocities.reshape(n_ppp_y, n_ppp_x, 3)
-    particle_momentum = particle_momentum.reshape(n_ppp_y, n_ppp_x, 3)
-    
-    particle_positions_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_positions)
-    particle_velocities_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_velocities)
-    particle_momentum_extended = extend.extend_lagrangian_quantity_2d(cartcomm, particle_momentum)
-
-    n_l_x = n_ppp_x + 1
-    n_l_y = n_ppp_y + 1
-
-    lagrangian_positions_extended = np.zeros([n_l_y, n_l_x, 2], dtype='float64')
-    lagrangian_positions_extended[:,:,0] = np.repeat(np.arange(0, n_l_y, 1), n_l_x).reshape(n_l_y, n_l_x) + coords[0] * n_ppp_y
-    lagrangian_positions_extended[:,:,1] = np.tile(np.arange(0, n_l_x, 1), n_l_y).reshape(n_l_y, n_l_x) + coords[1] * n_ppp_x
-
-    # Deposit using psi
-    # Create triangles arrays
-    pos = np.array(get_triangles_array(particle_positions_extended), copy=True)
-    pos_lagrangian = np.array(get_triangles_array(lagrangian_positions_extended), copy=True)
-    
-    vel = np.array(get_triangles_array(particle_velocities_extended), copy=True)
-    mom = np.array(get_triangles_array(particle_momentum_extended), copy=True)
-
-    ntri = pos.shape[0]
-
-    area = calculate_triangle_areas(pos, l_x, l_y)
-
-    for refine in refine_list:
-        if (rank==0):
-            t_start = MPI.Wtime()
-
-        sub_folder = '/' + str(deposit_n_x*refine) + 'x' + str(deposit_n_y*refine) + '/'
-        charge = (particle_charge * np.ones(ntri) / 2.0) * refine**2
-        grid = (deposit_n_x*refine, deposit_n_y*refine)
-        
-        deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box,
-                                  output_folder + sub_folder, species, t, time,
-                                  axis)
-#        deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window,
-#                                   box, output_folder + sub_folder, species, t,
-#                                   time, axis)
-#        deposit_triangles_momentum_lagrangian(cartcomm, pos_lagrangian, mom,
-#                                              charge, grid, window_lagrangian,
-#                                              box_lagrangian,
-#                                              output_folder + sub_folder,
-#                                              species, t, time, axis_lagrangian)
-#        deposit_triangles_current_points(cartcomm, pos, vel, charge, area, grid,
-#                                         window, box,
-#                                         output_folder + sub_folder, species, t,
-#                                         time, axis)
-#        deposit_triangles_p2p1(cartcomm, mom, charge, grid, window_p2p1,
-#                               box_p2p1, output_folder + sub_folder, species, t,
-#                               time, axis_p2p1)
-
-        if (rank==0):
-            t_end = MPI.Wtime()
-            t_elapsed = t_end - t_start
-            print('Time for triangle deposit:')
-            print(t_elapsed)
+        utilities.save_density_field_attrs(output_folder, 'ufl1-' + deposit_type, species, t, time, ufl1_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl2-' + deposit_type, species, t, time, ufl2_total, axis)
+        utilities.save_density_field_attrs(output_folder, 'ufl3-' + deposit_type, species, t, time, ufl3_total, axis)
 
     return
 
@@ -769,12 +608,12 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
                 if (rank==0):
                     t_start = MPI.Wtime()
 
-                deposit_particles(cartcomm, pos_particles, mom_particles, vel_particles, charge, grid, window,
+                deposit_particles_ctypes(cartcomm, pos_particles, mom_particles, vel_particles, charge, grid, window,
                                       box, output_folder + sub_folder, species, t,
                                       time, axis, deposit_type=deposit)
-#                deposit_particles_p2p1(cartcomm, mom_particles, charge, grid, window_p2p1,
-#                                       box_p2p1, output_folder + sub_folder,
-#                                       species, t, time, axis_p2p1, deposit=deposit)
+                deposit_particles_p2p1(cartcomm, mom_particles, charge, grid, window_p2p1,
+                                       box_p2p1, output_folder + sub_folder,
+                                       species, t, time, axis_p2p1, deposit=deposit)
                 if (rank==0):
                     t_end = MPI.Wtime()
                     t_elapsed = t_end - t_start
@@ -801,21 +640,21 @@ def save_triangle_fields_parallel_2d(comm, species, t, raw_folder,
             deposit_triangles_current(cartcomm, pos, vel, charge, grid, window, box,
                                       output_folder + sub_folder, species, t, time,
                                       axis)
-#            deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window,
-#                                       box, output_folder + sub_folder, species, t,
-#                                       time, axis)
-#            deposit_triangles_momentum_lagrangian(cartcomm, pos_lagrangian, mom,
-#                                                  charge, grid, window_lagrangian,
-#                                                  box_lagrangian,
-#                                                  output_folder + sub_folder,
-#                                                  species, t, time, axis_lagrangian)
-#            deposit_triangles_current_points(cartcomm, pos, vel, charge, area, grid,
-#                                             window, box,
-#                                             output_folder + sub_folder, species, t,
-#                                             time, axis)
-#            deposit_triangles_p2p1(cartcomm, mom, charge, grid, window_p2p1,
-#                                   box_p2p1, output_folder + sub_folder, species, t,
-#                                   time, axis_p2p1)
+            deposit_triangles_momentum(cartcomm, pos, mom, charge, grid, window,
+                                       box, output_folder + sub_folder, species, t,
+                                       time, axis)
+            deposit_triangles_momentum_lagrangian(cartcomm, pos_lagrangian, mom,
+                                                  charge, grid, window_lagrangian,
+                                                  box_lagrangian,
+                                                  output_folder + sub_folder,
+                                                  species, t, time, axis_lagrangian)
+            deposit_triangles_current_points(cartcomm, pos, vel, charge, area, grid,
+                                             window, box,
+                                             output_folder + sub_folder, species, t,
+                                             time, axis)
+            deposit_triangles_p2p1(cartcomm, mom, charge, grid, window_p2p1,
+                                   box_p2p1, output_folder + sub_folder, species, t,
+                                   time, axis_p2p1)
 
             if (rank==0):
                 t_end = MPI.Wtime()

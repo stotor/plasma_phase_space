@@ -2,6 +2,7 @@
 
 import numpy as np
 import math
+import ctypes
 from mpi4py import MPI
 import h5py
 
@@ -247,6 +248,42 @@ def deposit_species(particle_positions, field, particle_charges, n_x, n_y, dx, d
             charge = particle_charges[i]
             deposit_particle_2d_4(position, field, charge, n_x, n_y, dx)
     return field
+
+def deposit_species_ctypes(particle_positions, field, particle_charges,
+                           n_x, n_y, dx, deposit_type):
+    lib = ctypes.cdll['/Users/stotor/Desktop/plasma_phase_space/analysis_v2/pic_deposits/pic_deposits.so']
+    deposit_species = lib['deposit_species']
+
+    n_p = particle_positions.shape[0]
+    
+    if (deposit_type=='ngp'):
+        order = 0
+    elif (deposit_type=='cic'):
+        order = 1
+    elif (deposit_type=='quadratic'):
+        order = 2
+    elif (deposit_type=='cubic'):
+        order = 3
+    elif (deposit_type=='quartic'):
+        order = 4
+    cell_width = dx
+
+    c_double_p = ctypes.POINTER(ctypes.c_double)
+    
+    particle_positions_c = particle_positions.ctypes.data_as(c_double_p)
+    field_c = field.ctypes.data_as(c_double_p)
+    particle_charges_c = particle_charges.ctypes.data_as(c_double_p)
+    n_p_c = ctypes.c_int(n_p)
+    n_x_c = ctypes.c_int(n_x)
+    n_y_c = ctypes.c_int(n_y)
+    order_c = ctypes.c_int(order)
+    cell_width_c = ctypes.c_double(cell_width)
+
+    deposit_species(particle_positions_c, field_c, particle_charges_c, n_x_c, n_y_c,
+                    n_p_c, cell_width_c, order_c)
+
+    return 
+
 
 def calculate_power_spectrum(comm, species, t, raw_folder, output_folder, n_k_x, n_k_y):
     rank = comm.Get_rank()
