@@ -115,11 +115,11 @@ def calculate_tracer_separation_2d(comm, raw_filename, bin_edges):
     # Histogram separation distributions
     hist_x = np.histogram(separations_x, bin_edges)[0]
     hist_y = np.histogram(separations_y, bin_edges)[0]
-    hist_2d = np.array(np.histogram2d(separations_y, separations_x, bin_edges)[0], copy=True)
+#    hist_2d = np.array(np.histogram2d(separations_y, separations_x, bin_edges)[0], copy=True)
 
     hist_x_total = np.zeros_like(hist_x)
     hist_y_total = np.zeros_like(hist_y)
-    hist_2d_total = np.zeros_like(hist_2d)
+#    hist_2d_total = np.zeros_like(hist_2d)
 
     max_x_global = np.zeros(1, dtype='double')
     min_x_global = np.zeros(1, dtype='double')
@@ -132,7 +132,7 @@ def calculate_tracer_separation_2d(comm, raw_filename, bin_edges):
     # Sum reduction of histograms
     cartcomm.Reduce([hist_x, MPI.DOUBLE], [hist_x_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
     cartcomm.Reduce([hist_y, MPI.DOUBLE], [hist_y_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
-    cartcomm.Reduce([hist_2d, MPI.DOUBLE], [hist_2d_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
+#    cartcomm.Reduce([hist_2d, MPI.DOUBLE], [hist_2d_total, MPI.DOUBLE], op = MPI.SUM, root = 0)
 
     cartcomm.Reduce([max_x, MPI.DOUBLE], [max_x_global, MPI.DOUBLE], op = MPI.MAX, root = 0)
     cartcomm.Reduce([min_x, MPI.DOUBLE], [min_x_global, MPI.DOUBLE], op = MPI.MIN, root = 0)
@@ -157,7 +157,7 @@ def calculate_tracer_separation_2d(comm, raw_filename, bin_edges):
         statistics['l_x'] = l_x
         statistics['dx'] = dx
         
-    return [hist_y_total, hist_x_total, statistics, hist_2d_total]
+    return [hist_y_total, hist_x_total, statistics]#, hist_2d_total]
 
 # Main program
 
@@ -185,7 +185,7 @@ timesteps = range(n_t)
 
 separation_x_evolution = np.zeros([n_bins, n_t])
 separation_y_evolution = np.zeros([n_bins, n_t])
-separation_2d_evolution = np.zeros([n_bins, n_bins, n_t])
+#separation_2d_evolution = np.zeros([n_bins, n_bins, n_t])
 
 max_x = np.zeros(n_t, dtype = 'double')
 min_x = np.zeros(n_t, dtype = 'double')
@@ -200,12 +200,13 @@ for t in timesteps:
         print('Starting timestep ' + str(t))
 
     raw_filename = raw_folder + "/RAW-" + species + "-" + str(t).zfill(6) + ".h5"
-    [hist_y_total, hist_x_total, statistics, hist_2d_total] = calculate_tracer_separation_2d(comm, raw_filename, bin_edges)
+#    [hist_y_total, hist_x_total, statistics, hist_2d_total] = calculate_tracer_separation_2d(comm, raw_filename, bin_edges)
+    [hist_y_total, hist_x_total, statistics] = calculate_tracer_separation_2d(comm, raw_filename, bin_edges)
 
     if (rank==0):
         separation_x_evolution[:,t] = hist_x_total
         separation_y_evolution[:,t] = hist_y_total
-        separation_2d_evolution[:,:,t] = hist_2d_total
+#        separation_2d_evolution[:,:,t] = hist_2d_total
         max_x[t] = statistics['max_x']
         min_x[t] = statistics['min_x']
         mean_x[t] = statistics['mean_x']
@@ -226,7 +227,7 @@ if (rank==0):
     h5f = h5py.File(save_filename, 'w')
     h5f.create_dataset('separation_x_evolution', data=separation_x_evolution)
     h5f.create_dataset('separation_y_evolution', data=separation_y_evolution)
-    h5f.create_dataset('separation_2d_evolution', data=separation_2d_evolution)
+#    h5f.create_dataset('separation_2d_evolution', data=separation_2d_evolution)
     h5f.create_dataset('time', data=t_array)
     h5f.create_dataset('bin_edges', data=bin_edges)
     h5f.create_dataset('max_x', data=max_x)
