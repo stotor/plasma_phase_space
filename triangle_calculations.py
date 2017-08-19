@@ -1018,6 +1018,9 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
 
     # Loop over sample locations and calculate distribution function
     for i in range(len(sample_locations)):
+        if (rank==0):
+            t_start = MPI.Wtime()
+
         sample_position = np.ones([pos.shape[0],2], dtype='float64')
         sample_position[:,1] = sample_locations[i][1]
         sample_position[:,0] = sample_locations[i][0]
@@ -1107,6 +1110,13 @@ def distribution_function_2d(comm, species, t, raw_folder, output_folder,
             h5f['sample_' + str(i)].attrs['x'] = sample_locations[i][1]
             h5f['sample_' + str(i)].attrs['y'] = sample_locations[i][0]
             h5f['sample_' + str(i)].attrs['time'] = time
+
+        if (rank==0):
+            t_end = MPI.Wtime()
+            t_elapsed = t_end - t_start
+            print('Time for distribution function sample point ' + str(i))
+            print(t_elapsed)
+
 
     if (rank==0):
             h5f.close()
